@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: PPS Auth Service - Cognito User Pool, Go Lambda API, and DynamoDB profiles
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  CognitoDomainPrefix:
+    Type: String
+    Description: Globally unique Cognito managed-login domain prefix
+  CallbackURLs:
+    Type: CommaDelimitedList
+    Default: http://localhost:4321/auth/callback
+  LogoutURLs:
+    Type: CommaDelimitedList
+    Default: http://localhost:4321/
+  FrontendOrigins:
+    Type: CommaDelimitedList
+    Default: http://localhost:4321
+
+Globals:
+  Function:
+    Runtime: provided.al2023
+    Architectures: [x86_64]
+    MemorySize: 256
+    Timeout: 15
+    Tracing: PassThrough
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub pps-users-${Environment}
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate: [email]
+      DeletionProtection: !If [IsProd, ACTIVE, INACTIVE]
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+      ManagedLoginVersion: 2
+
+  ResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      Identifier: pps-api
+      Name: PPS API
+      UserPoolId: !Ref UserPool
+      Scopes:
+        - ScopeName: profile.read
+          ScopeDescription: Read the signed-in user's PPS profile
+        - ScopeName: profile.write
+          ScopeDescription: Update the signed-in user's PPS profile
+        - ScopeName: catalog.admin
+          ScopeDescription: Administer the PPS catalog
+
+  WebClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: ResourceServer
+    Properties:
+      ClientName: !Sub pps-web-${Environment}
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+        - pps-api/profile.read
+        - pps-api/profile.write
+        - pps-api/catalog.admin
+      CallbackURLs: !Ref CallbackURLs
+      LogoutURLs: !Ref LogoutURLs
+      SupportedIdentityProviders: [COGNITO]
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  ProfilesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub pps-auth-profiles-${Environment}
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  AuthApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Environment
+      CorsConfiguration:
+        AllowOrigins: !Ref FrontendOrigins
+        AllowMethods: [GET, PUT, POST, OPTIONS]
+        AllowHeaders: [Authorization, Content-Type, X-Request-ID]
+        MaxAge: 3600
+      AccessLogSettings:
+        DestinationArn: !GetAtt AuthApiLogs.Arn
+        Format: '{"requestId":"$context.requestId","routeKey":"$context.routeKey","status":$context.status,"responseLatency":$context.responseLatency}'
+
+  AuthApiLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/http-api/pps-auth-${Environment}
+      RetentionInDays: 14
+
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: bootstrap
+      Environment:
+        Variables:
+          COGNITO_DOMAIN: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          COGNITO_CLIENT_ID: !Ref WebClient
+          COGNITO_SCOPES: openid,email,profile,pps-api/profile.read,pps-api/profile.write,pps-api/catalog.admin
+          ALLOWED_CALLBACK_URLS: !Join [",", !Ref CallbackURLs]
+          ALLOWED_LOGOUT_URLS: !Join [",", !Ref LogoutURLs]
+          FRONTEND_ORIGINS: !Join [",", !Ref FrontendOrigins]
+          DYNAMODB_TABLE: !Ref ProfilesTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProfilesTable
+      Events:
+        DefaultRoute:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AuthApi
+            Path: /{proxy+}
+            Method: ANY
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Outputs:
+  ApiURL:
+    Value: !Sub https://${AuthApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+  UserPoolID:
+    Value: !Ref UserPool
+  ClientID:
+    Value: !Ref WebClient
+  Issuer:
+    Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+  JWKSURL:
+    Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/jwks.json
+  CognitoDomain:
+    Value: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
+  ProfilesTableName:
+    Value: !Ref ProfilesTable

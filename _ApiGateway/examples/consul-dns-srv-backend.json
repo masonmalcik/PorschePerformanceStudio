@@ -1,0 +1,9 @@
+{
+  "encoding": "no-op",
+  "sd": "dns-shared",
+  "sd_scheme": "http",
+  "host": ["_catalog._tcp.service.consul"],
+  "disable_host_sanitize": true,
+  "url_pattern": "/products"
+}
+

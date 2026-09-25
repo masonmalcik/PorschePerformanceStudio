@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="320" viewBox="0 0 512 320" role="img" aria-labelledby="title description">
+  <title id="title">Brand image placeholder</title>
+  <description id="description">Temporary placeholder for approved brand artwork</description>
+  <rect width="512" height="320" rx="24" fill="#171717"/>
+  <path d="M176 216V104h92c43 0 68 20 68 56s-25 56-68 56h-36v-34h34c16 0 25-7 25-22s-9-22-25-22h-45v78z" fill="#f4f4f4"/>
+  <text x="256" y="274" fill="#aaa" font-family="Arial, sans-serif" font-size="18" text-anchor="middle">BRAND IMAGE</text>
+</svg>

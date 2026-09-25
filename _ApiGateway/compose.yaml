@@ -1,0 +1,63 @@
+name: pps-api-gateway
+
+services:
+  api-gateway:
+    image: ${KRAKEND_IMAGE:-krakend:2.13.3}
+    command: ["run", "-c", "/etc/krakend/krakend.tmpl"]
+    environment:
+      FC_ENABLE: "1"
+      FC_OUT: /tmp/krakend.json
+      PPS_CATALOG_URL: ${PPS_CATALOG_URL:-http://catalog-service:8081}
+      PPS_AUTH_URL: ${PPS_AUTH_URL:-http://auth-service:8082}
+      PPS_AUTH_PREFIX: ${PPS_AUTH_PREFIX:-}
+      PPS_AUTH_MODE: ${PPS_AUTH_MODE:-development}
+      PPS_JWKS_URL: ${PPS_JWKS_URL:-http://auth-service:8082/.well-known/jwks.json}
+      PPS_JWT_ISSUER: ${PPS_JWT_ISSUER:-https://auth.pps.local}
+    ports:
+      - "${PPS_GATEWAY_PORT:-8080}:8080"
+      - "${PPS_METRICS_PORT:-9091}:9091"
+    volumes:
+      - ./config:/etc/krakend:ro
+    networks:
+      - pps
+      - observability
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/__health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: ["observability"]
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks: [observability]
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.135.0
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    networks: [observability]
+    restart: unless-stopped
+
+networks:
+  pps:
+    name: pps
+    external: true
+  observability:
+    name: pps-observability
+
+volumes:
+  prometheus-data:

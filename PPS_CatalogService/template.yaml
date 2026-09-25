@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: PPS Catalog Service
+
+Parameters:
+  MongoDbSecretArn:
+    Type: String
+    Description: ARN of a Secrets Manager secret with a MONGODB_URI JSON property
+  MongoDbDatabase:
+    Type: String
+    Default: pps_catalog
+
+Resources:
+  CatalogFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: rust-cargolambda
+      BuildProperties:
+        Binary: api
+    Properties:
+      FunctionName: PPS-CatalogService
+      CodeUri: .
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          MONGODB_URI: !Sub '{{resolve:secretsmanager:${MongoDbSecretArn}:SecretString:MONGODB_URI}}'
+          MONGODB_DATABASE: !Ref MongoDbDatabase
+          ADMIN_AUTH_MODE: disabled
+          RUST_LOG: info
+      Events:
+        ProxyApi:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+        CreateVehicleModelApi:
+          Type: HttpApi
+          Properties:
+            Path: /admin/vehicle-models
+            Method: POST
+        CreateVehicleGenerationApi:
+          Type: HttpApi
+          Properties:
+            Path: /admin/vehicle-generations
+            Method: POST
+        CategoryApi:
+          Type: HttpApi
+          Properties:
+            Path: /admin/categories
+            Method: ANY
+        BrandOptionsApi:
+          Type: HttpApi
+          Properties:
+            Path: /admin/brands
+            Method: GET
+        VehicleTrimApi:
+          Type: HttpApi
+          Properties:
+            Path: /admin/vehicle-trims
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${ServerlessHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'

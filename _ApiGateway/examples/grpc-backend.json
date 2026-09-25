@@ -1,0 +1,17 @@
+{
+  "comment": "Replace a REST backend with this shape when a PPS service exposes gRPC and a protobuf descriptor.",
+  "documentation": "https://www.krakend.io/docs/backends/grpc/",
+  "backend": {
+    "host": ["catalog-grpc:50051"],
+    "url_pattern": "/pps.catalog.v1.CatalogService/GetProduct",
+    "encoding": "json",
+    "extra_config": {
+      "backend/grpc": {
+        "descriptor": "/etc/krakend/proto/catalog.pb",
+        "input_mapping": {"id": "id"},
+        "output_mapping": {"product": "product"}
+      }
+    }
+  }
+}
+

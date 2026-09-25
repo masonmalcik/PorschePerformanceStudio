@@ -1,0 +1,10 @@
+/target/
+**/target/
+.env
+*.pem
+samconfig.toml
+.aws-sam/
+.idea/
+.vscode/
+.DS_Store
+

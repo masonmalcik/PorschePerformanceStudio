@@ -1,0 +1,26 @@
+name: pps-auth-service
+
+services:
+  auth-service:
+    build:
+      context: .
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8082:8082"
+    networks: [pps]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/auth-service", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  pps:
+    name: pps
+    external: true

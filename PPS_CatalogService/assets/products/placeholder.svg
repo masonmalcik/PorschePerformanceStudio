@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Product image placeholder</title>
+  <description id="description">Temporary placeholder for product artwork</description>
+  <rect width="512" height="512" rx="24" fill="#171717"/>
+  <path d="M150 172h212v168H150z" fill="none" stroke="#f4f4f4" stroke-width="18"/>
+  <path d="m170 315 65-70 48 49 34-36 30 57z" fill="#666"/>
+  <circle cx="305" cy="220" r="22" fill="#f4f4f4"/>
+  <text x="256" y="396" fill="#aaa" font-family="Arial, sans-serif" font-size="18" text-anchor="middle">PRODUCT IMAGE</text>
+</svg>
