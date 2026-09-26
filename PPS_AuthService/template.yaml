@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: PPS Auth Service - Cognito User Pool, Go Lambda API, and DynamoDB profiles
+Description: PPS Auth Service - Cognito OIDC, Go Lambda API, and DynamoDB authorization data
 
 Parameters:
   Environment:
@@ -103,22 +103,45 @@ Resources:
         IdToken: minutes
         RefreshToken: days
 
-  ProfilesTable:
+  AuthTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      TableName: !Sub pps-auth-profiles-${Environment}
+      TableName: !Sub pps-auth-${Environment}
       BillingMode: PROVISIONED
       ProvisionedThroughput:
         ReadCapacityUnits: 1
         WriteCapacityUnits: 1
       AttributeDefinitions:
-        - AttributeName: userId
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
           AttributeType: S
       KeySchema:
-        - AttributeName: userId
+        - AttributeName: PK
           KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 1
+            WriteCapacityUnits: 1
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       SSESpecification:
         SSEEnabled: true
 
@@ -157,10 +180,10 @@ Resources:
           ALLOWED_CALLBACK_URLS: !Join [",", !Ref CallbackURLs]
           ALLOWED_LOGOUT_URLS: !Join [",", !Ref LogoutURLs]
           FRONTEND_ORIGINS: !Join [",", !Ref FrontendOrigins]
-          DYNAMODB_TABLE: !Ref ProfilesTable
+          DYNAMODB_TABLE: !Ref AuthTable
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref ProfilesTable
+            TableName: !Ref AuthTable
       Events:
         DefaultRoute:
           Type: HttpApi
@@ -185,5 +208,5 @@ Outputs:
     Value: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}/.well-known/jwks.json
   CognitoDomain:
     Value: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
-  ProfilesTableName:
-    Value: !Ref ProfilesTable
+  AuthTableName:
+    Value: !Ref AuthTable

@@ -2,28 +2,26 @@ package profile
 
 import (
 	"context"
-	"time"
+
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authmodel"
 )
 
-type Profile struct {
-	UserID         string    `json:"userId" dynamodbav:"userId"`
-	Email          string    `json:"email" dynamodbav:"email"`
-	DisplayName    string    `json:"displayName" dynamodbav:"displayName"`
-	Locale         string    `json:"locale" dynamodbav:"locale"`
-	Timezone       string    `json:"timezone" dynamodbav:"timezone"`
-	MarketingOptIn bool      `json:"marketingOptIn" dynamodbav:"marketingOptIn"`
-	CreatedAt      time.Time `json:"createdAt" dynamodbav:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt" dynamodbav:"updatedAt"`
+type Profile = authmodel.UserProfile
+
+type Identity struct {
+	UserID        string
+	Issuer        string
+	Email         string
+	EmailVerified bool
 }
 
 type Update struct {
-	DisplayName    string `json:"displayName"`
-	Locale         string `json:"locale"`
-	Timezone       string `json:"timezone"`
-	MarketingOptIn bool   `json:"marketingOptIn"`
+	DisplayName string `json:"displayName"`
+	Locale      string `json:"locale"`
+	Timezone    string `json:"timezone"`
 }
 
 type Repository interface {
-	GetOrCreate(context.Context, string, string) (Profile, error)
-	Update(context.Context, string, string, Update) (Profile, error)
+	GetOrCreate(context.Context, Identity) (Profile, error)
+	Update(context.Context, Identity, Update) (Profile, error)
 }

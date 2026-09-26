@@ -17,14 +17,14 @@ import (
 
 type memoryProfiles struct{ value profile.Profile }
 
-func (m *memoryProfiles) GetOrCreate(_ context.Context, id, email string) (profile.Profile, error) {
+func (m *memoryProfiles) GetOrCreate(_ context.Context, identity profile.Identity) (profile.Profile, error) {
 	if m.value.UserID == "" {
-		m.value = profile.Profile{UserID: id, Email: email, CreatedAt: time.Unix(1, 0), UpdatedAt: time.Unix(1, 0)}
+		m.value = profile.Profile{UserID: identity.UserID, Email: identity.Email, EmailVerified: identity.EmailVerified, Issuer: identity.Issuer, CreatedAt: time.Unix(1, 0), UpdatedAt: time.Unix(1, 0)}
 	}
 	return m.value, nil
 }
-func (m *memoryProfiles) Update(_ context.Context, id, email string, update profile.Update) (profile.Profile, error) {
-	m.value = profile.Profile{UserID: id, Email: email, DisplayName: update.DisplayName, Locale: update.Locale, Timezone: update.Timezone, MarketingOptIn: update.MarketingOptIn}
+func (m *memoryProfiles) Update(_ context.Context, identity profile.Identity, update profile.Update) (profile.Profile, error) {
+	m.value = profile.Profile{UserID: identity.UserID, Email: identity.Email, EmailVerified: identity.EmailVerified, Issuer: identity.Issuer, DisplayName: update.DisplayName, Locale: update.Locale, Timezone: update.Timezone}
 	return m.value, nil
 }
 
@@ -64,7 +64,7 @@ func TestMeUsesCognitoSubjectAsProfileKey(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer token" {
 			t.Error("bearer token not forwarded")
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"sub": "user-123", "email": "owner@example.com"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"sub": "user-123", "email": "owner@example.com", "email_verified": true})
 	}))
 	defer cognito.Close()
 	repo := &memoryProfiles{}

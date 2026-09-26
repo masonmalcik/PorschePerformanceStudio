@@ -1,6 +1,6 @@
 # PPS Auth Service
 
-Go authentication/profile microservice for Porsche Performance Studio. Amazon Cognito User Pools supplies OIDC/OAuth 2.0, managed login, MFA, recovery, and signed access tokens. DynamoDB stores only PPS application-profile data.
+Go authentication and authorization microservice for Porsche Performance Studio. Amazon Cognito User Pools supplies OIDC/OAuth 2.0, managed login, MFA, recovery, and signed access tokens. DynamoDB stores PPS profiles, roles, permissions, memberships, identity links, consent records, audit events, and migration history.
 
 ## API
 
@@ -26,7 +26,24 @@ sam build
 sam deploy --guided
 ```
 
-During guided deployment, choose a globally unique `CognitoDomainPrefix`. The SAM stack creates the User Pool, public PKCE app client, resource server/scopes, managed-login domain, DynamoDB table, HTTP API, and ARM64 Lambda.
+During guided deployment, choose a globally unique `CognitoDomainPrefix`. The SAM stack creates the User Pool, public PKCE app client, resource server/scopes, managed-login domain, DynamoDB table, HTTP API, and x86-64 Lambda.
+
+## Database migrations
+
+Infrastructure schema changes are managed by SAM/CloudFormation. Versioned data migrations are implemented in `cmd/migrate` and use a DynamoDB lock plus checksummed migration records. Run migrations after deploying the table:
+
+```powershell
+docker run --rm `
+  -v "${PWD}:/src" `
+  -v "${env:USERPROFILE}\.aws:/root/.aws:ro" `
+  -w /src `
+  -e AWS_PROFILE=pps-deploy `
+  -e AWS_REGION=us-east-1 `
+  golang:1.24 `
+  go run ./cmd/migrate --table pps-auth-dev --region us-east-1
+```
+
+The initial migrations seed permissions, system roles, and role-permission mappings. New users receive the `customer` role atomically when their profile is created.
 
 Use the stack outputs to configure the gateway:
 

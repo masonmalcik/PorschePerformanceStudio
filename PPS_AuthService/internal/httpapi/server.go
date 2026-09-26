@@ -105,7 +105,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 type cognitoUser struct {
 	Sub           string `json:"sub"`
 	Email         string `json:"email"`
-	EmailVerified string `json:"email_verified"`
+	EmailVerified bool   `json:"email_verified"`
 	Username      string `json:"username"`
 }
 
@@ -115,7 +115,7 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid Cognito access token is required")
 		return
 	}
-	value, err := s.profiles.GetOrCreate(r.Context(), user.Sub, user.Email)
+	value, err := s.profiles.GetOrCreate(r.Context(), s.identity(user))
 	if err != nil {
 		s.internalError(w, err)
 		return
@@ -134,12 +134,16 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "profile fields are invalid")
 		return
 	}
-	value, err := s.profiles.Update(r.Context(), user.Sub, user.Email, update)
+	value, err := s.profiles.Update(r.Context(), s.identity(user), update)
 	if err != nil {
 		s.internalError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, value)
+}
+
+func (s *Server) identity(user cognitoUser) profile.Identity {
+	return profile.Identity{UserID: user.Sub, Issuer: s.cfg.Issuer(), Email: user.Email, EmailVerified: user.EmailVerified}
 }
 
 func (s *Server) userInfo(r *http.Request) (cognitoUser, error) {
