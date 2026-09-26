@@ -151,7 +151,7 @@ Resources:
       StageName: !Ref Environment
       CorsConfiguration:
         AllowOrigins: !Ref FrontendOrigins
-        AllowMethods: [GET, PUT, POST, OPTIONS]
+        AllowMethods: [GET, PUT, POST, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, X-Request-ID]
         MaxAge: 3600
       AccessLogSettings:

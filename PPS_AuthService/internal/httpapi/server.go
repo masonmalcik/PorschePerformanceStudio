@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authz"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/config"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/profile"
 )
@@ -22,12 +23,13 @@ var verifierPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 type Server struct {
 	cfg      config.Config
 	profiles profile.Repository
+	authz    authz.Repository
 	client   *http.Client
 	logger   *slog.Logger
 }
 
-func New(cfg config.Config, profiles profile.Repository, client *http.Client, logger *slog.Logger) http.Handler {
-	server := &Server{cfg: cfg, profiles: profiles, client: client, logger: logger}
+func New(cfg config.Config, profiles profile.Repository, authorization authz.Repository, client *http.Client, logger *slog.Logger) http.Handler {
+	server := &Server{cfg: cfg, profiles: profiles, authz: authorization, client: client, logger: logger}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
 	mux.HandleFunc("GET /.well-known/openid-configuration", server.discovery)
@@ -37,6 +39,17 @@ func New(cfg config.Config, profiles profile.Repository, client *http.Client, lo
 	mux.HandleFunc("GET /oauth/logout", server.logout)
 	mux.HandleFunc("GET /me", server.getMe)
 	mux.HandleFunc("PUT /me", server.updateMe)
+	mux.HandleFunc("GET /roles", server.listRoles)
+	mux.HandleFunc("POST /roles", server.createRole)
+	mux.HandleFunc("GET /roles/{roleId}", server.getRole)
+	mux.HandleFunc("PUT /roles/{roleId}/permissions", server.setRolePermissions)
+	mux.HandleFunc("PUT /users/{userId}/roles/{roleId}", server.assignRole)
+	mux.HandleFunc("DELETE /users/{userId}/roles/{roleId}", server.removeRole)
+	mux.HandleFunc("GET /organizations", server.listOrganizations)
+	mux.HandleFunc("POST /organizations", server.createOrganization)
+	mux.HandleFunc("PUT /organizations/{organizationId}/members/{userId}", server.upsertMembership)
+	mux.HandleFunc("GET /me/consents", server.listConsents)
+	mux.HandleFunc("POST /me/consents", server.recordConsent)
 	return requestLog(logger, cors(cfg.FrontendOrigins, securityHeaders(mux)))
 }
 
@@ -146,6 +159,252 @@ func (s *Server) identity(user cognitoUser) profile.Identity {
 	return profile.Identity{UserID: user.Sub, Issuer: s.cfg.Issuer(), Email: user.Email, EmailVerified: user.EmailVerified}
 }
 
+func (s *Server) listRoles(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePermission(w, r, "roles:read"); !ok {
+		return
+	}
+	roles, err := s.authz.ListRoles(r.Context())
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"roles": roles})
+}
+
+func (s *Server) getRole(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePermission(w, r, "roles:read"); !ok {
+		return
+	}
+	role, permissions, err := s.authz.GetRole(r.Context(), r.PathValue("roleId"))
+	if errors.Is(err, authz.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "role was not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"role": role, "permissions": permissions})
+}
+
+type createRoleRequest struct {
+	RoleID      string `json:"roleId"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+func (s *Server) createRole(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requirePermission(w, r, "roles:manage")
+	if !ok {
+		return
+	}
+	var input createRoleRequest
+	if decodeJSON(r, &input) != nil || !authz.ValidID(input.RoleID) || input.Name == "" || len(input.Name) > 100 || len(input.Description) > 500 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "valid roleId, name, and description are required")
+		return
+	}
+	role, err := s.authz.CreateRole(r.Context(), user.Sub, input.RoleID, input.Name, input.Description)
+	if errors.Is(err, authz.ErrConflict) {
+		writeError(w, http.StatusConflict, "conflict", "role already exists")
+		return
+	}
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, role)
+}
+
+type permissionsRequest struct {
+	Permissions []string `json:"permissions"`
+}
+
+func (s *Server) setRolePermissions(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requirePermission(w, r, "roles:manage")
+	if !ok {
+		return
+	}
+	var input permissionsRequest
+	if decodeJSON(r, &input) != nil || len(input.Permissions) > 30 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "permissions must contain at most 30 values")
+		return
+	}
+	for _, permission := range input.Permissions {
+		if !authz.ValidID(permission) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "permission identifiers are invalid")
+			return
+		}
+	}
+	err := s.authz.SetRolePermissions(r.Context(), user.Sub, r.PathValue("roleId"), input.Permissions, requestID(r))
+	if errors.Is(err, authz.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "role was not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type roleAssignmentRequest struct {
+	OrganizationID string `json:"organizationId"`
+}
+
+func (s *Server) assignRole(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requirePermission(w, r, "roles:assign")
+	if !ok {
+		return
+	}
+	var input roleAssignmentRequest
+	if r.ContentLength > 0 && decodeJSON(r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "request body is invalid")
+		return
+	}
+	if err := s.authz.AssignRole(r.Context(), user.Sub, r.PathValue("userId"), r.PathValue("roleId"), input.OrganizationID, requestID(r)); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) removeRole(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requirePermission(w, r, "roles:assign")
+	if !ok {
+		return
+	}
+	if err := s.authz.RemoveRole(r.Context(), user.Sub, r.PathValue("userId"), r.PathValue("roleId"), r.URL.Query().Get("organizationId"), requestID(r)); err != nil {
+		s.internalError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listOrganizations(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requirePermission(w, r, "organizations:read"); !ok {
+		return
+	}
+	values, err := s.authz.ListOrganizations(r.Context())
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"organizations": values})
+}
+
+type createOrganizationRequest struct {
+	Name string `json:"name"`
+}
+
+func (s *Server) createOrganization(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requirePermission(w, r, "organizations:manage")
+	if !ok {
+		return
+	}
+	var input createOrganizationRequest
+	if decodeJSON(r, &input) != nil || strings.TrimSpace(input.Name) == "" || len(input.Name) > 200 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "organization name is required")
+		return
+	}
+	value, err := s.authz.CreateOrganization(r.Context(), user.Sub, input.Name, requestID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, value)
+}
+
+type membershipRequest struct {
+	Status string `json:"status"`
+}
+
+func (s *Server) upsertMembership(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requirePermission(w, r, "organizations:members:manage")
+	if !ok {
+		return
+	}
+	var input membershipRequest
+	if decodeJSON(r, &input) != nil || (input.Status != "active" && input.Status != "suspended") {
+		writeError(w, http.StatusBadRequest, "invalid_request", "status must be active or suspended")
+		return
+	}
+	value, err := s.authz.UpsertMembership(r.Context(), user.Sub, r.PathValue("organizationId"), r.PathValue("userId"), input.Status, requestID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, value)
+}
+
+func (s *Server) listConsents(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.authenticated(w, r)
+	if !ok {
+		return
+	}
+	values, err := s.authz.ListConsents(r.Context(), user.Sub)
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"consents": values})
+}
+
+type consentRequest struct {
+	ConsentType   string `json:"consentType"`
+	PolicyVersion string `json:"policyVersion"`
+	Granted       bool   `json:"granted"`
+}
+
+func (s *Server) recordConsent(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.authenticated(w, r)
+	if !ok {
+		return
+	}
+	var input consentRequest
+	if decodeJSON(r, &input) != nil || !authz.ValidID(input.ConsentType) || input.PolicyVersion == "" || len(input.PolicyVersion) > 50 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "valid consentType and policyVersion are required")
+		return
+	}
+	value, err := s.authz.RecordConsent(r.Context(), user.Sub, input.ConsentType, input.PolicyVersion, input.Granted, "api", requestID(r))
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, value)
+}
+
+func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) (cognitoUser, bool) {
+	user, err := s.userInfo(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid Cognito access token is required")
+		return cognitoUser{}, false
+	}
+	if _, err := s.profiles.GetOrCreate(r.Context(), s.identity(user)); err != nil {
+		s.internalError(w, err)
+		return cognitoUser{}, false
+	}
+	return user, true
+}
+
+func (s *Server) requirePermission(w http.ResponseWriter, r *http.Request, permission string) (cognitoUser, bool) {
+	user, ok := s.authenticated(w, r)
+	if !ok {
+		return cognitoUser{}, false
+	}
+	permissions, err := s.authz.Permissions(r.Context(), user.Sub)
+	if err != nil {
+		s.internalError(w, err)
+		return cognitoUser{}, false
+	}
+	if _, allowed := permissions[permission]; !allowed {
+		writeError(w, http.StatusForbidden, "forbidden", "the user does not have the required permission")
+		return cognitoUser{}, false
+	}
+	return user, true
+}
+
+func requestID(r *http.Request) string { return r.Header.Get("X-Request-ID") }
+
 func (s *Server) userInfo(r *http.Request) (cognitoUser, error) {
 	authorization := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authorization, "Bearer ") {
@@ -228,7 +487,7 @@ func cors(origins map[string]struct{}, next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

@@ -11,11 +11,50 @@ import (
 	"testing"
 	"time"
 
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authmodel"
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authz"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/config"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/profile"
 )
 
 type memoryProfiles struct{ value profile.Profile }
+
+type memoryAuthorization struct{}
+
+func (*memoryAuthorization) Permissions(context.Context, string) (map[string]struct{}, error) {
+	return map[string]struct{}{}, nil
+}
+func (*memoryAuthorization) ListRoles(context.Context) ([]authmodel.Role, error) { return nil, nil }
+func (*memoryAuthorization) GetRole(context.Context, string) (authmodel.Role, []string, error) {
+	return authmodel.Role{}, nil, authz.ErrNotFound
+}
+func (*memoryAuthorization) CreateRole(context.Context, string, string, string, string) (authmodel.Role, error) {
+	return authmodel.Role{}, nil
+}
+func (*memoryAuthorization) SetRolePermissions(context.Context, string, string, []string, string) error {
+	return nil
+}
+func (*memoryAuthorization) AssignRole(context.Context, string, string, string, string, string) error {
+	return nil
+}
+func (*memoryAuthorization) RemoveRole(context.Context, string, string, string, string, string) error {
+	return nil
+}
+func (*memoryAuthorization) ListOrganizations(context.Context) ([]authmodel.Organization, error) {
+	return nil, nil
+}
+func (*memoryAuthorization) CreateOrganization(context.Context, string, string, string) (authmodel.Organization, error) {
+	return authmodel.Organization{}, nil
+}
+func (*memoryAuthorization) UpsertMembership(context.Context, string, string, string, string, string) (authmodel.Membership, error) {
+	return authmodel.Membership{}, nil
+}
+func (*memoryAuthorization) ListConsents(context.Context, string) ([]authmodel.Consent, error) {
+	return nil, nil
+}
+func (*memoryAuthorization) RecordConsent(context.Context, string, string, string, bool, string, string) (authmodel.Consent, error) {
+	return authmodel.Consent{}, nil
+}
 
 func (m *memoryProfiles) GetOrCreate(_ context.Context, identity profile.Identity) (profile.Profile, error) {
 	if m.value.UserID == "" {
@@ -33,7 +72,7 @@ func testConfig(domain string) config.Config {
 }
 
 func TestAuthorizeBuildsPKCERedirect(t *testing.T) {
-	handler := New(testConfig("https://example.auth.us-east-1.amazoncognito.com"), &memoryProfiles{}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := New(testConfig("https://example.auth.us-east-1.amazoncognito.com"), &memoryProfiles{}, &memoryAuthorization{}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	verifier := strings.Repeat("a", 43)
 	request := httptest.NewRequest(http.MethodGet, "/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A4321%2Fauth%2Fcallback&state=1234567890abcdef&code_challenge="+PKCEChallenge(verifier), nil)
 	response := httptest.NewRecorder()
@@ -50,7 +89,7 @@ func TestAuthorizeBuildsPKCERedirect(t *testing.T) {
 }
 
 func TestAuthorizeRejectsUnlistedRedirect(t *testing.T) {
-	handler := New(testConfig("https://example.invalid"), &memoryProfiles{}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := New(testConfig("https://example.invalid"), &memoryProfiles{}, &memoryAuthorization{}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	request := httptest.NewRequest(http.MethodGet, "/oauth/authorize?redirect_uri=https%3A%2F%2Fevil.example&state=1234567890abcdef&code_challenge="+strings.Repeat("a", 43), nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -68,7 +107,7 @@ func TestMeUsesCognitoSubjectAsProfileKey(t *testing.T) {
 	}))
 	defer cognito.Close()
 	repo := &memoryProfiles{}
-	handler := New(testConfig(cognito.URL), repo, cognito.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := New(testConfig(cognito.URL), repo, &memoryAuthorization{}, cognito.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	request := httptest.NewRequest(http.MethodGet, "/me", nil)
 	request.Header.Set("Authorization", "Bearer token")
 	response := httptest.NewRecorder()

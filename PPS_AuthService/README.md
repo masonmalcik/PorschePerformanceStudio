@@ -14,6 +14,17 @@ Go authentication and authorization microservice for Porsche Performance Studio.
 | `GET` | `/oauth/logout` | Starts Cognito logout |
 | `GET` | `/me` | Returns Cognito identity plus PPS profile |
 | `PUT` | `/me` | Updates PPS profile fields |
+| `GET` | `/roles` | Lists roles; requires `roles:read` |
+| `POST` | `/roles` | Creates a custom role; requires `roles:manage` |
+| `GET` | `/roles/{roleId}` | Returns a role and its permissions |
+| `PUT` | `/roles/{roleId}/permissions` | Replaces role permissions; requires `roles:manage` |
+| `PUT` | `/users/{userId}/roles/{roleId}` | Assigns a role; requires `roles:assign` |
+| `DELETE` | `/users/{userId}/roles/{roleId}` | Removes a role; requires `roles:assign` |
+| `GET` | `/organizations` | Lists organizations |
+| `POST` | `/organizations` | Creates an organization |
+| `PUT` | `/organizations/{organizationId}/members/{userId}` | Creates or updates a membership |
+| `GET` | `/me/consents` | Returns the signed-in user's consent history |
+| `POST` | `/me/consents` | Appends an immutable consent record |
 
 The service listens on port `8082` locally.
 
@@ -44,6 +55,23 @@ docker run --rm `
 ```
 
 The initial migrations seed permissions, system roles, and role-permission mappings. New users receive the `customer` role atomically when their profile is created.
+
+### Initial administrator
+
+There is intentionally no public first-administrator endpoint. After the first user signs in once (creating their profile), find their Cognito `sub` and use the credentialed bootstrap command:
+
+```powershell
+docker run --rm `
+  -v "${PWD}:/src" `
+  -v "${env:USERPROFILE}\.aws:/root/.aws:ro" `
+  -w /src `
+  -e AWS_PROFILE=pps-deploy `
+  -e AWS_REGION=us-east-1 `
+  golang:1.24 `
+  go run ./cmd/authctl --table pps-auth-dev --user-id <COGNITO_SUB> --role administrator
+```
+
+Role, permission, organization, membership, and consent mutations write an immutable audit event in the same DynamoDB transaction as the changed record.
 
 Use the stack outputs to configure the gateway:
 

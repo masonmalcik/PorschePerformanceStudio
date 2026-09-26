@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authz"
 	appconfig "github.com/porsche-performance-studio/pps-auth-service/internal/config"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/httpapi"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/lambdaadapter"
@@ -32,7 +33,8 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	handler = httpapi.New(cfg, profile.NewDynamoRepository(dynamodb.NewFromConfig(awsCfg), cfg.DynamoDBTable), &http.Client{Timeout: 10 * time.Second}, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	dynamoClient := dynamodb.NewFromConfig(awsCfg)
+	handler = httpapi.New(cfg, profile.NewDynamoRepository(dynamoClient, cfg.DynamoDBTable), authz.New(dynamoClient, cfg.DynamoDBTable), &http.Client{Timeout: 10 * time.Second}, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 }
 
 func main() { lambda.Start(invoke) }

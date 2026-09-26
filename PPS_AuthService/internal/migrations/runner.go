@@ -19,6 +19,7 @@ type DynamoDBAPI interface {
 	DeleteItem(context.Context, *dynamodb.DeleteItemInput, ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
 	GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	PutItem(context.Context, *dynamodb.PutItemInput, ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	UpdateItem(context.Context, *dynamodb.UpdateItemInput, ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
 }
 
 type migration struct {
@@ -78,7 +79,71 @@ func definitions() []migration {
 		{id: "0002-seed-permissions", fingerprint: "permissions-v1", apply: seedPermissions},
 		{id: "0003-seed-system-roles", fingerprint: "roles-v1", apply: seedRoles},
 		{id: "0004-map-role-permissions", fingerprint: "role-permissions-v1", apply: seedRolePermissions},
+		{id: "0005-authorization-api-permissions", fingerprint: "authorization-api-permissions-v1", apply: seedAuthorizationAPIPermissions},
 	}
+}
+
+func seedAuthorizationAPIPermissions(ctx context.Context, r *Runner) error {
+	additional := []struct{ code, description string }{
+		{"organizations:read", "Read PPS organizations"},
+		{"organizations:manage", "Create and update PPS organizations"},
+		{"organizations:members:manage", "Manage organization memberships"},
+	}
+	for _, value := range additional {
+		item := authmodel.Permission{PK: "PERMISSION#" + value.code, SK: "METADATA", EntityType: authmodel.EntityPermission, Code: value.code, Description: value.description}
+		if err := r.putSeed(ctx, item); err != nil {
+			return err
+		}
+	}
+
+	additionalMappings := map[string][]string{
+		"service-advisor": {"organizations:read"},
+		"administrator":   {"organizations:read", "organizations:manage", "organizations:members:manage"},
+	}
+	now := r.now()
+	for roleID, values := range additionalMappings {
+		for _, permissionID := range values {
+			item := authmodel.RolePermission{PK: "ROLE#" + roleID, SK: "PERMISSION#" + permissionID, EntityType: authmodel.EntityRolePermission, RoleID: roleID, PermissionID: permissionID, GrantedAt: now}
+			if err := r.putSeed(ctx, item); err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, role := range roles {
+		if err := r.updateRoleIndex(ctx, role.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Runner) updateRoleIndex(ctx context.Context, roleID string) error {
+	for attempt := 0; attempt < 8; attempt++ {
+		_, err := r.client.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+			TableName: aws.String(r.table), Key: map[string]types.AttributeValue{
+				"PK": &types.AttributeValueMemberS{Value: "ROLE#" + roleID}, "SK": &types.AttributeValueMemberS{Value: "METADATA"},
+			},
+			UpdateExpression: aws.String("SET GSI1PK = :pk, GSI1SK = :sk"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":pk": &types.AttributeValueMemberS{Value: "ENTITY#ROLE"}, ":sk": &types.AttributeValueMemberS{Value: roleID},
+			},
+			ConditionExpression: aws.String("attribute_exists(PK)"),
+		})
+		if err == nil {
+			time.Sleep(1100 * time.Millisecond)
+			return nil
+		}
+		if !isThrottled(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * time.Second):
+		}
+	}
+	return errors.New("DynamoDB remained throttled while indexing roles")
 }
 
 var permissions = []struct{ code, description string }{

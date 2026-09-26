@@ -12,9 +12,9 @@
   "idle_timeout": "60s",
   "read_header_timeout": "5s",
   "extra_config": {
-    "router/cors": {
+    "security/cors": {
       "allow_origins": ["http://localhost:3000", "http://localhost:4321", "http://localhost:5173"],
-      "allow_methods": ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      "allow_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       "allow_headers": ["Authorization", "Content-Type", "If-None-Match", "X-PPS-Admin-Key", "X-Request-ID"],
       "expose_headers": ["Cache-Control", "ETag", "X-Request-ID"],
       "max_age": "12h"
@@ -44,19 +44,19 @@
       "endpoint": "/api/v1/auth/health",
       "method": "GET",
       "output_encoding": "no-op",
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/health"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/health"}]
     },
     {
       "endpoint": "/api/v1/auth/.well-known/openid-configuration",
       "method": "GET",
       "output_encoding": "no-op",
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/.well-known/openid-configuration"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/.well-known/openid-configuration"}]
     },
     {
       "endpoint": "/api/v1/auth/.well-known/jwks.json",
       "method": "GET",
       "output_encoding": "no-op",
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/.well-known/jwks.json"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/.well-known/jwks.json"}]
     },
     {
       "endpoint": "/api/v1/auth/oauth/authorize",
@@ -64,7 +64,7 @@
       "input_query_strings": ["redirect_uri", "state", "code_challenge"],
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 50, "capacity": 50, "client_max_rate": 10, "client_capacity": 10, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/oauth/authorize"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/oauth/authorize"}]
     },
     {
       "endpoint": "/api/v1/auth/oauth/token",
@@ -72,14 +72,14 @@
       "input_headers": ["Content-Type", "X-Request-ID"],
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 30, "capacity": 30, "client_max_rate": 5, "client_capacity": 5, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/oauth/token"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/oauth/token"}]
     },
     {
       "endpoint": "/api/v1/auth/oauth/logout",
       "method": "GET",
       "input_query_strings": ["logout_uri"],
       "output_encoding": "no-op",
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/oauth/logout"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/oauth/logout"}]
     },
     {
       "endpoint": "/api/v1/auth/me",
@@ -87,29 +87,40 @@
       "input_headers": ["Authorization", "X-Request-ID"],
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 100, "capacity": 100, "client_max_rate": 20, "client_capacity": 20, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/me"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/me"}]
     },
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/me/consents" "method" "GET" "backendPath" "/me/consents" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/me/consents" "method" "POST" "backendPath" "/me/consents" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/roles" "method" "GET" "backendPath" "/roles" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/roles" "method" "POST" "backendPath" "/roles" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/roles/{roleId}" "method" "GET" "backendPath" "/roles/{roleId}" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/roles/{roleId}/permissions" "method" "PUT" "backendPath" "/roles/{roleId}/permissions" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/users/{userId}/roles/{roleId}" "method" "PUT" "backendPath" "/users/{userId}/roles/{roleId}" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/users/{userId}/roles/{roleId}" "method" "DELETE" "backendPath" "/users/{userId}/roles/{roleId}" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/organizations" "method" "GET" "backendPath" "/organizations" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/organizations" "method" "POST" "backendPath" "/organizations" }},
+    {{ template "authEndpoint" dict "path" "/api/v1/auth/organizations/{organizationId}/members/{userId}" "method" "PUT" "backendPath" "/organizations/{organizationId}/members/{userId}" }},
     {
       "endpoint": "/api/v1/auth/me",
       "method": "PUT",
       "input_headers": ["Authorization", "Content-Type", "X-Request-ID"],
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 50, "capacity": 50, "client_max_rate": 10, "client_capacity": 10, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "host": ["{{ env \"PPS_AUTH_URL\" }}"], "url_pattern": "{{ env \"PPS_AUTH_PREFIX\" }}/me"}]
+      "backend": [{"encoding": "no-op", "host": ["{{ env "PPS_AUTH_URL" }}"], "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}/me"}]
     },
     {
       "endpoint": "/api/v1/catalog/health",
       "method": "GET",
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 50, "capacity": 50, "client_max_rate": 10, "client_capacity": 10, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env \"PPS_CATALOG_URL\" }}"], "url_pattern": "/health"}]
+      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/health"}]
     },
     {
       "endpoint": "/api/v1/catalog/api-docs/openapi.json",
       "method": "GET",
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 20, "capacity": 20, "client_max_rate": 5, "client_capacity": 5, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env \"PPS_CATALOG_URL\" }}"], "url_pattern": "/api-docs/openapi.json", "extra_config": {"qos/http-cache": {"shared": true}}}]
+      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/api-docs/openapi.json", "extra_config": {"qos/http-cache": {"shared": true}}}]
     },
     {
       "endpoint": "/api/v1/catalog/products",
@@ -118,7 +129,7 @@
       "input_headers": ["If-None-Match", "X-Request-ID"],
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 200, "capacity": 200, "client_max_rate": 30, "client_capacity": 30, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env \"PPS_CATALOG_URL\" }}"], "url_pattern": "/products", "extra_config": {"qos/http-cache": {"shared": true, "max_items": 1000, "max_size": 134217728}}}]
+      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/products", "extra_config": {"qos/http-cache": {"max_items": 1000, "max_size": 134217728}}}]
     },
     {
       "endpoint": "/api/v1/catalog/products/{id}",
@@ -126,7 +137,7 @@
       "input_headers": ["If-None-Match", "X-Request-ID"],
       "output_encoding": "no-op",
       "extra_config": {"qos/ratelimit/router": {"max_rate": 200, "capacity": 200, "client_max_rate": 30, "client_capacity": 30, "strategy": "ip"}},
-      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env \"PPS_CATALOG_URL\" }}"], "url_pattern": "/products/{id}", "extra_config": {"qos/http-cache": {"shared": true, "max_items": 1000, "max_size": 134217728}}}]
+      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/products/{id}", "extra_config": {"qos/http-cache": {"max_items": 1000, "max_size": 134217728}}}]
     },
     {{ template "adminEndpoint" dict "path" "/api/v1/catalog/admin/products" "method" "GET" "backendPath" "/admin/products" }},
     {{ template "adminEndpoint" dict "path" "/api/v1/catalog/admin/products" "method" "POST" "backendPath" "/admin/products" }},
@@ -147,6 +158,24 @@
     {{ template "adminEndpoint" dict "path" "/api/v1/catalog/admin/product-fitments" "method" "POST" "backendPath" "/admin/product-fitments" }}
   ]
 }
+
+{{ define "authEndpoint" }}
+{
+  "endpoint": "{{ .path }}",
+  "method": "{{ .method }}",
+  "input_headers": ["Authorization", "Content-Type", "X-Request-ID"],
+  "input_query_strings": ["organizationId"],
+  "output_encoding": "no-op",
+  "extra_config": {
+    "qos/ratelimit/router": {"max_rate": 50, "capacity": 50, "client_max_rate": 10, "client_capacity": 10, "strategy": "ip"}
+  },
+  "backend": [{
+    "encoding": "no-op",
+    "host": ["{{ env "PPS_AUTH_URL" }}"],
+    "url_pattern": "{{ env "PPS_AUTH_PREFIX" }}{{ .backendPath }}"
+  }]
+}
+{{ end }}
 
 {{ define "adminEndpoint" }}
 {

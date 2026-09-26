@@ -44,6 +44,8 @@ type UserProfile struct {
 type Role struct {
 	PK          string    `json:"-" dynamodbav:"PK"`
 	SK          string    `json:"-" dynamodbav:"SK"`
+	GSI1PK      string    `json:"-" dynamodbav:"GSI1PK"`
+	GSI1SK      string    `json:"-" dynamodbav:"GSI1SK"`
 	EntityType  string    `json:"-" dynamodbav:"entityType"`
 	RoleID      string    `json:"roleId" dynamodbav:"roleId"`
 	Name        string    `json:"name" dynamodbav:"name"`
@@ -87,6 +89,8 @@ type RolePermission struct {
 type Organization struct {
 	PK             string    `json:"-" dynamodbav:"PK"`
 	SK             string    `json:"-" dynamodbav:"SK"`
+	GSI1PK         string    `json:"-" dynamodbav:"GSI1PK"`
+	GSI1SK         string    `json:"-" dynamodbav:"GSI1SK"`
 	EntityType     string    `json:"-" dynamodbav:"entityType"`
 	OrganizationID string    `json:"organizationId" dynamodbav:"organizationId"`
 	Name           string    `json:"name" dynamodbav:"name"`
