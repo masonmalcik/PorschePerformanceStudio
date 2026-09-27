@@ -28,6 +28,12 @@ Go authentication and authorization microservice for Porsche Performance Studio.
 
 The service listens on port `8082` locally.
 
+## Token verification
+
+Protected routes verify Cognito access tokens locally with RS256 and require the configured issuer, app-client ID, `access` token use, expiration, subject, and signing key ID. Verified OIDC/Cognito claims are attached to the Go request context; protected handlers do not call Cognito's `userInfo` endpoint.
+
+The in-memory JWKS cache refreshes every 24 hours and refreshes early when Cognito rotates to an unknown signing key. JWKS requests use a dedicated three-second HTTP timeout and three bounded attempts with backoff. When Cognito's keys cannot be refreshed, protected routes return retryable HTTP `503` responses instead of panicking or misclassifying the outage as an invalid credential.
+
 ## AWS deployment
 
 Prerequisites: Go 1.24+, AWS SAM CLI, and authenticated AWS credentials.

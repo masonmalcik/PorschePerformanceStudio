@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authn"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/authz"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/config"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/profile"
@@ -28,8 +29,9 @@ type Server struct {
 	logger   *slog.Logger
 }
 
-func New(cfg config.Config, profiles profile.Repository, authorization authz.Repository, client *http.Client, logger *slog.Logger) http.Handler {
+func New(cfg config.Config, profiles profile.Repository, authorization authz.Repository, verifier authn.Verifier, client *http.Client, logger *slog.Logger) http.Handler {
 	server := &Server{cfg: cfg, profiles: profiles, authz: authorization, client: client, logger: logger}
+	authenticate := authn.NewMiddleware(verifier, logger).Authenticate
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
 	mux.HandleFunc("GET /.well-known/openid-configuration", server.discovery)
@@ -37,19 +39,19 @@ func New(cfg config.Config, profiles profile.Repository, authorization authz.Rep
 	mux.HandleFunc("GET /oauth/authorize", server.authorize)
 	mux.HandleFunc("POST /oauth/token", server.token)
 	mux.HandleFunc("GET /oauth/logout", server.logout)
-	mux.HandleFunc("GET /me", server.getMe)
-	mux.HandleFunc("PUT /me", server.updateMe)
-	mux.HandleFunc("GET /roles", server.listRoles)
-	mux.HandleFunc("POST /roles", server.createRole)
-	mux.HandleFunc("GET /roles/{roleId}", server.getRole)
-	mux.HandleFunc("PUT /roles/{roleId}/permissions", server.setRolePermissions)
-	mux.HandleFunc("PUT /users/{userId}/roles/{roleId}", server.assignRole)
-	mux.HandleFunc("DELETE /users/{userId}/roles/{roleId}", server.removeRole)
-	mux.HandleFunc("GET /organizations", server.listOrganizations)
-	mux.HandleFunc("POST /organizations", server.createOrganization)
-	mux.HandleFunc("PUT /organizations/{organizationId}/members/{userId}", server.upsertMembership)
-	mux.HandleFunc("GET /me/consents", server.listConsents)
-	mux.HandleFunc("POST /me/consents", server.recordConsent)
+	mux.Handle("GET /me", authenticate(http.HandlerFunc(server.getMe)))
+	mux.Handle("PUT /me", authenticate(http.HandlerFunc(server.updateMe)))
+	mux.Handle("GET /roles", authenticate(http.HandlerFunc(server.listRoles)))
+	mux.Handle("POST /roles", authenticate(http.HandlerFunc(server.createRole)))
+	mux.Handle("GET /roles/{roleId}", authenticate(http.HandlerFunc(server.getRole)))
+	mux.Handle("PUT /roles/{roleId}/permissions", authenticate(http.HandlerFunc(server.setRolePermissions)))
+	mux.Handle("PUT /users/{userId}/roles/{roleId}", authenticate(http.HandlerFunc(server.assignRole)))
+	mux.Handle("DELETE /users/{userId}/roles/{roleId}", authenticate(http.HandlerFunc(server.removeRole)))
+	mux.Handle("GET /organizations", authenticate(http.HandlerFunc(server.listOrganizations)))
+	mux.Handle("POST /organizations", authenticate(http.HandlerFunc(server.createOrganization)))
+	mux.Handle("PUT /organizations/{organizationId}/members/{userId}", authenticate(http.HandlerFunc(server.upsertMembership)))
+	mux.Handle("GET /me/consents", authenticate(http.HandlerFunc(server.listConsents)))
+	mux.Handle("POST /me/consents", authenticate(http.HandlerFunc(server.recordConsent)))
 	return requestLog(logger, cors(cfg.FrontendOrigins, securityHeaders(mux)))
 }
 
@@ -123,9 +125,8 @@ type cognitoUser struct {
 }
 
 func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
-	user, err := s.userInfo(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid Cognito access token is required")
+	user, ok := s.authenticated(w, r)
+	if !ok {
 		return
 	}
 	value, err := s.profiles.GetOrCreate(r.Context(), s.identity(user))
@@ -137,9 +138,8 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
-	user, err := s.userInfo(r)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid Cognito access token is required")
+	user, ok := s.authenticated(w, r)
+	if !ok {
 		return
 	}
 	var update profile.Update
@@ -374,11 +374,12 @@ func (s *Server) recordConsent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) (cognitoUser, bool) {
-	user, err := s.userInfo(r)
-	if err != nil {
+	claims, ok := authn.ClaimsFromContext(r.Context())
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid Cognito access token is required")
 		return cognitoUser{}, false
 	}
+	user := cognitoUser{Sub: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, Username: claims.EffectiveUsername()}
 	if _, err := s.profiles.GetOrCreate(r.Context(), s.identity(user)); err != nil {
 		s.internalError(w, err)
 		return cognitoUser{}, false
@@ -404,28 +405,6 @@ func (s *Server) requirePermission(w http.ResponseWriter, r *http.Request, permi
 }
 
 func requestID(r *http.Request) string { return r.Header.Get("X-Request-ID") }
-
-func (s *Server) userInfo(r *http.Request) (cognitoUser, error) {
-	authorization := r.Header.Get("Authorization")
-	if !strings.HasPrefix(authorization, "Bearer ") {
-		return cognitoUser{}, errors.New("missing bearer token")
-	}
-	request, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, s.cfg.CognitoDomain+"/oauth2/userInfo", nil)
-	request.Header.Set("Authorization", authorization)
-	response, err := s.client.Do(request)
-	if err != nil {
-		return cognitoUser{}, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return cognitoUser{}, errors.New("invalid token")
-	}
-	var user cognitoUser
-	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&user); err != nil || user.Sub == "" {
-		return cognitoUser{}, errors.New("invalid userInfo response")
-	}
-	return user, nil
-}
 
 func (s *Server) internalError(w http.ResponseWriter, err error) {
 	s.logger.Error("request failed", "error", err)

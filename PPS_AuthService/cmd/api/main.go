@@ -12,6 +12,7 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authn"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/authz"
 	appconfig "github.com/porsche-performance-studio/pps-auth-service/internal/config"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/httpapi"
@@ -36,7 +37,13 @@ func main() {
 	repository := profile.NewDynamoRepository(dynamodb.NewFromConfig(awsCfg), cfg.DynamoDBTable)
 	authorization := authz.New(dynamodb.NewFromConfig(awsCfg), cfg.DynamoDBTable)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: httpapi.New(cfg, repository, authorization, &http.Client{Timeout: 10 * time.Second}, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	verifier, err := authn.NewCachedVerifier(authn.Options{Issuer: cfg.Issuer(), ClientID: cfg.ClientID, JWKSURL: cfg.JWKSURL(), HTTPClient: &http.Client{Timeout: 3 * time.Second}})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer verifier.Close()
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: httpapi.New(cfg, repository, authorization, verifier, httpClient, logger), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	logger.Info("auth service listening", "port", cfg.Port)
 	log.Fatal(server.ListenAndServe())
 }

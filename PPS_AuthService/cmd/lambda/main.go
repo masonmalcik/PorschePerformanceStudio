@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authn"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/authz"
 	appconfig "github.com/porsche-performance-studio/pps-auth-service/internal/config"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/httpapi"
@@ -34,7 +35,12 @@ func init() {
 		log.Fatal(err)
 	}
 	dynamoClient := dynamodb.NewFromConfig(awsCfg)
-	handler = httpapi.New(cfg, profile.NewDynamoRepository(dynamoClient, cfg.DynamoDBTable), authz.New(dynamoClient, cfg.DynamoDBTable), &http.Client{Timeout: 10 * time.Second}, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	verifier, err := authn.NewCachedVerifier(authn.Options{Issuer: cfg.Issuer(), ClientID: cfg.ClientID, JWKSURL: cfg.JWKSURL(), HTTPClient: &http.Client{Timeout: 3 * time.Second}})
+	if err != nil {
+		log.Fatal(err)
+	}
+	handler = httpapi.New(cfg, profile.NewDynamoRepository(dynamoClient, cfg.DynamoDBTable), authz.New(dynamoClient, cfg.DynamoDBTable), verifier, httpClient, slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 }
 
 func main() { lambda.Start(invoke) }

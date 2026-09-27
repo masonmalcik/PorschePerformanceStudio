@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/authmodel"
+	"github.com/porsche-performance-studio/pps-auth-service/internal/authn"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/authz"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/config"
 	"github.com/porsche-performance-studio/pps-auth-service/internal/profile"
@@ -20,6 +21,14 @@ import (
 type memoryProfiles struct{ value profile.Profile }
 
 type memoryAuthorization struct{}
+
+type staticVerifier struct{ claims authn.Claims }
+
+func (s staticVerifier) Verify(context.Context, string) (authn.Claims, error) { return s.claims, nil }
+
+func testVerifier() staticVerifier {
+	return staticVerifier{claims: authn.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "user-123", Issuer: "https://cognito-idp.us-east-1.amazonaws.com/pool"}, Email: "owner@example.com", EmailVerified: true, TokenUse: "access", ClientID: "client"}}
+}
 
 func (*memoryAuthorization) Permissions(context.Context, string) (map[string]struct{}, error) {
 	return map[string]struct{}{}, nil
@@ -72,7 +81,7 @@ func testConfig(domain string) config.Config {
 }
 
 func TestAuthorizeBuildsPKCERedirect(t *testing.T) {
-	handler := New(testConfig("https://example.auth.us-east-1.amazoncognito.com"), &memoryProfiles{}, &memoryAuthorization{}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := New(testConfig("https://example.auth.us-east-1.amazoncognito.com"), &memoryProfiles{}, &memoryAuthorization{}, testVerifier(), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	verifier := strings.Repeat("a", 43)
 	request := httptest.NewRequest(http.MethodGet, "/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A4321%2Fauth%2Fcallback&state=1234567890abcdef&code_challenge="+PKCEChallenge(verifier), nil)
 	response := httptest.NewRecorder()
@@ -89,7 +98,7 @@ func TestAuthorizeBuildsPKCERedirect(t *testing.T) {
 }
 
 func TestAuthorizeRejectsUnlistedRedirect(t *testing.T) {
-	handler := New(testConfig("https://example.invalid"), &memoryProfiles{}, &memoryAuthorization{}, http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := New(testConfig("https://example.invalid"), &memoryProfiles{}, &memoryAuthorization{}, testVerifier(), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	request := httptest.NewRequest(http.MethodGet, "/oauth/authorize?redirect_uri=https%3A%2F%2Fevil.example&state=1234567890abcdef&code_challenge="+strings.Repeat("a", 43), nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -99,15 +108,8 @@ func TestAuthorizeRejectsUnlistedRedirect(t *testing.T) {
 }
 
 func TestMeUsesCognitoSubjectAsProfileKey(t *testing.T) {
-	cognito := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer token" {
-			t.Error("bearer token not forwarded")
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"sub": "user-123", "email": "owner@example.com", "email_verified": true})
-	}))
-	defer cognito.Close()
 	repo := &memoryProfiles{}
-	handler := New(testConfig(cognito.URL), repo, &memoryAuthorization{}, cognito.Client(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := New(testConfig("https://example.invalid"), repo, &memoryAuthorization{}, testVerifier(), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	request := httptest.NewRequest(http.MethodGet, "/me", nil)
 	request.Header.Set("Authorization", "Bearer token")
 	response := httptest.NewRecorder()
