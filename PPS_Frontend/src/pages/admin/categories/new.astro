@@ -1,0 +1,4 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';import AdminToolLinks from '../../../components/AdminToolLinks.astro';import CreateCategoryForm from '../../../components/CreateCategoryForm';
+---
+<BaseLayout title="Create New Category | PPS Admin Tools" description="Create a catalog category."><section class="admin-intro"><div><h1>Create New Category</h1><p>Add a product category to the Porsche Performance Studio catalog.</p><AdminToolLinks /></div><div class="environment-badge"><span></span> Local development</div></section><CreateCategoryForm client:load /></BaseLayout>

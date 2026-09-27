@@ -1,0 +1,4 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';import AccountProfile from '../components/AccountProfile';
+---
+<BaseLayout title="Your account | PPS" description="Manage your PPS profile and order history."><section class="catalog-intro"><p class="eyebrow dark">YOUR STUDIO</p><h1>Account and orders.</h1><p>Your verified identity, access, and performance order history.</p></section><section class="account-shell"><AccountProfile client:load /></section></BaseLayout>

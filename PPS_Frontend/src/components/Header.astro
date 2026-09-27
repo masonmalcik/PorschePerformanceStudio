@@ -1,0 +1,19 @@
+---
+import AuthControls from './AuthControls';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const path = Astro.url.pathname.startsWith(base) ? Astro.url.pathname.slice(base.length) || '/' : Astro.url.pathname;
+const link = (route: string) => `${base}${route}` || '/';
+---
+<header class="site-header">
+  <a class="brand" href={link('/')} aria-label="Porsche Performance Studio home">
+    <span class="brand-mark">PPS</span>
+    <span class="brand-copy"><small>Malčík Brother's</small><strong>PORSCHE PERFORMANCE STUDIO</strong></span>
+  </a>
+  <nav aria-label="Primary navigation">
+    <a class:list={{ active: path === '/' }} href={link('/')}>Studio</a>
+    <a class:list={{ active: path.startsWith('/catalog') }} href={link('/catalog')}>Catalog</a>
+    <a class:list={{ active: path.startsWith('/cart') }} href={link('/cart')}>Cart</a>
+    <a class:list={{ active: path.startsWith('/admin') }} href={link('/admin/vehicle-models/new')}>Admin</a>
+  </nav>
+  <AuthControls client:load />
+</header>

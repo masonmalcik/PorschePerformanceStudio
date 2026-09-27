@@ -13,6 +13,7 @@ use std::{
 use tokio::{sync::RwLock, time::sleep};
 
 const CATALOG_ADMIN_SCOPE: &str = "pps-api/catalog.admin";
+const CATALOG_ADMIN_GROUP: &str = "pps-admins";
 const JWKS_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Clone)]
@@ -39,6 +40,8 @@ struct CognitoClaims {
     token_use: String,
     #[serde(default)]
     scope: String,
+    #[serde(rename = "cognito:groups", default)]
+    groups: Vec<String>,
 }
 
 impl CognitoAuthorizer {
@@ -151,6 +154,9 @@ impl RequestAuthorizer for CognitoAuthorizer {
             .split_whitespace()
             .any(|scope| scope == CATALOG_ADMIN_SCOPE)
         {
+            return Err(AppError::Forbidden);
+        }
+        if !claims.groups.iter().any(|group| group == CATALOG_ADMIN_GROUP) {
             return Err(AppError::Forbidden);
         }
         Ok(Principal {

@@ -1,0 +1,4 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';import AdminToolLinks from '../../../components/AdminToolLinks.astro';import CreateProductForm from '../../../components/CreateProductForm';
+---
+<BaseLayout title="Create New Product | PPS Admin Tools" description="Create a catalog product."><section class="admin-intro"><div><h1>Create New Product</h1><p>Add a product to the Porsche Performance Studio catalog.</p><AdminToolLinks /></div><div class="environment-badge"><span></span> Local development</div></section><CreateProductForm client:load /></BaseLayout>

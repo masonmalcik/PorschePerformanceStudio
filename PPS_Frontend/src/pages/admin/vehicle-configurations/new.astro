@@ -1,0 +1,4 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';import AdminToolLinks from '../../../components/AdminToolLinks.astro';import CreateVehicleConfigurationForm from '../../../components/CreateVehicleConfigurationForm';
+---
+<BaseLayout title="Create New Configuration | PPS Admin Tools" description="Create a vehicle configuration."><section class="admin-intro"><div><h1>Create New Configuration</h1><p>Add a vehicle configuration to the Porsche Performance Studio catalog.</p><AdminToolLinks /></div><div class="environment-badge"><span></span> Local development</div></section><CreateVehicleConfigurationForm client:load /></BaseLayout>

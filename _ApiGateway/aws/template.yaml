@@ -47,7 +47,7 @@ Resources:
       Name: !Sub pps-http-api-${Environment}
       ProtocolType: HTTP
       CorsConfiguration:
-        AllowOrigins: [http://localhost:3000, http://localhost:5173]
+        AllowOrigins: [http://localhost:3000, http://localhost:4321, http://localhost:5173, https://masonmalcik.github.io]
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         AllowHeaders: [Authorization, Content-Type, Idempotency-Key, Stripe-Signature, X-Request-ID]
         ExposeHeaders: [ETag, X-Request-ID]

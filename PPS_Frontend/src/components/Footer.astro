@@ -1,0 +1,15 @@
+---
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const link = (route: string) => `${base}${route}` || '/';
+---
+<footer class="site-footer">
+  <div>
+    <p class="footer-brand">PORSCHE <span>PERFORMANCE STUDIO</span></p>
+    <p class="muted">Precision upgrades, thoughtfully selected.</p>
+  </div>
+  <div class="footer-links">
+    <a href={link('/')}>Studio</a>
+    <a href={link('/catalog')}>Catalog</a>
+  </div>
+  <p class="legal">Concept experience. Not affiliated with Porsche AG.</p>
+</footer>

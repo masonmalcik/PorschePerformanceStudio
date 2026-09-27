@@ -1,0 +1,6 @@
+---
+const base=import.meta.env.BASE_URL.replace(/\/$/,'');
+const path=Astro.url.pathname.startsWith(base)?Astro.url.pathname.slice(base.length)||'/':Astro.url.pathname;
+const links=[['Create Model','/admin/vehicle-models/new'],['Create Generation','/admin/vehicle-generations/new'],['Create Trim','/admin/vehicle-trims/new'],['Create Configuration','/admin/vehicle-configurations/new'],['Create Engine','/admin/engines/new'],['Create Brand','/admin/brands/new'],['Create Category','/admin/categories/new'],['Create Product','/admin/products/new'],['Create Fitment','/admin/product-fitments/new']];
+---
+<div class="admin-links">{links.map(([label,href])=><a class:list={{active:path===href}} href={`${base}${href}`}>{label}</a>)}</div>

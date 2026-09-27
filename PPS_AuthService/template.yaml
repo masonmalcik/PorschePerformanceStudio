@@ -12,13 +12,13 @@ Parameters:
     Description: Globally unique Cognito managed-login domain prefix
   CallbackURLs:
     Type: CommaDelimitedList
-    Default: http://localhost:4321/auth/callback
+    Default: http://localhost:4321/auth/callback,https://masonmalcik.github.io/PorschePerformanceStudio/auth/callback
   LogoutURLs:
     Type: CommaDelimitedList
-    Default: http://localhost:4321/
+    Default: http://localhost:4321/,https://masonmalcik.github.io/PorschePerformanceStudio/
   FrontendOrigins:
     Type: CommaDelimitedList
-    Default: http://localhost:4321
+    Default: http://localhost:4321,https://masonmalcik.github.io
 
 Globals:
   Function:

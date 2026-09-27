@@ -11,6 +11,7 @@ Polyglot, serverless microservices intended for AWS Lambda.
 | `PPS_CartService` | Node.js/TypeScript + DynamoDB + Memcached | Implemented and deployed |
 | `PPS_OrderService` | Node.js/TypeScript + PostgreSQL + transactional outbox | Implemented and deployed |
 | `PPS_PaymentService` | Node.js/TypeScript + Stripe + PostgreSQL ledger | Implemented and deployed |
+| `PPS_Frontend` | Astro + React + Cognito PKCE | Implemented; local build verified |
 | `PPS_NotificationService` | TypeScript/Node.js | Planned |
 | `PPS_InventoryService` | Python + PostgreSQL | Planned |
 

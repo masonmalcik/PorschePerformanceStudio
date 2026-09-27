@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import AdminToolLinks from '../../../components/AdminToolLinks.astro';
+import CreateEngineForm from '../../../components/CreateEngineForm';
+---
+<BaseLayout title="Create New Engine | PPS Admin Tools" description="Create an engine.">
+  <section class="admin-intro">
+    <div><h1>Create New Engine</h1><p>Add an engine to the Porsche Performance Studio catalog.</p><AdminToolLinks /></div>
+    <div class="environment-badge"><span></span> Local development</div>
+  </section>
+  <CreateEngineForm client:load />
+</BaseLayout>

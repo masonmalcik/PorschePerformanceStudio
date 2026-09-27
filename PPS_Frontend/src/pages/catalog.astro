@@ -1,0 +1,12 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import CatalogIsland from '../components/CatalogIsland';
+---
+<BaseLayout title="Catalog | Porsche Performance Studio" description="Explore curated performance upgrades by model and category.">
+  <section class="catalog-intro">
+    <p class="eyebrow dark">PERFORMANCE CATALOG</p>
+    <h1>Purpose in every detail.</h1>
+    <p>Explore upgrades selected for precision, feel, and lasting performance.</p>
+  </section>
+  <CatalogIsland client:visible />
+</BaseLayout>

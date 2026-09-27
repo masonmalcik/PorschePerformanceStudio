@@ -1,0 +1,61 @@
+name: Deploy PPS Frontend to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'PPS_Frontend/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: PPS_Frontend/package-lock.json
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Install dependencies
+        working-directory: PPS_Frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: PPS_Frontend
+        env:
+          GITHUB_PAGES: 'true'
+          PUBLIC_PPS_API_GATEWAY_URL: https://bjq3n8ojr9.execute-api.us-east-1.amazonaws.com
+          PUBLIC_PPS_AUTH_API_URL: https://tx40tjevg0.execute-api.us-east-1.amazonaws.com/dev
+          PUBLIC_COGNITO_DOMAIN: https://pps-024080483599-dev.auth.us-east-1.amazoncognito.com
+          PUBLIC_COGNITO_CLIENT_ID: 1n58iicfsjglca4bghrvjhon8q
+        run: npm run build
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: PPS_Frontend/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

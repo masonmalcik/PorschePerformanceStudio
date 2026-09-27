@@ -1,0 +1,7 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import AuthPanel from '../components/AuthPanel';
+---
+<BaseLayout title="Sign in | Porsche Performance Studio" description="Securely access your PPS account.">
+  <section class="auth-shell"><div><p class="eyebrow dark">MEMBER ACCESS</p><h1>Your performance profile.</h1><p>Manage selections, orders, preferences, and Studio access in one secure account.</p></div><AuthPanel client:load /></section>
+</BaseLayout>

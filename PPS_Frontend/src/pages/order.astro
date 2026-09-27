@@ -1,0 +1,4 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';import OrderDetail from '../components/OrderDetail';
+---
+<BaseLayout title="Order details | PPS" description="Track your Porsche Performance Studio order."><section class="catalog-intro"><p class="eyebrow dark">ORDER STATUS</p><h1>Your performance order.</h1><p>Follow each durable checkout transition.</p></section><section class="account-shell"><OrderDetail client:load /></section></BaseLayout>

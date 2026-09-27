@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,30 @@ func TestAuthorizeRejectsUnlistedRedirect(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", response.Code)
+	}
+}
+
+func TestTokenProxiesRefreshGrantWithoutClientSecret(t *testing.T) {
+	var received url.Values
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		received = r.Form
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"new-access","expires_in":900,"token_type":"Bearer"}`)
+	}))
+	defer provider.Close()
+	handler := New(testConfig(provider.URL), &memoryProfiles{}, &memoryAuthorization{}, testVerifier(), http.DefaultClient, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	request := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(`{"grantType":"refresh_token","refreshToken":"refresh-value"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", response.Code, response.Body.String())
+	}
+	if received.Get("grant_type") != "refresh_token" || received.Get("refresh_token") != "refresh-value" || received.Get("client_id") != "client" {
+		t.Fatalf("unexpected refresh form: %#v", received)
 	}
 }
 

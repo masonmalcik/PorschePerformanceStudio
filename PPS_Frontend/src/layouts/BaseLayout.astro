@@ -1,0 +1,32 @@
+---
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import AuthGate from '../components/AuthGate';
+import '../styles/global.css';
+
+interface Props { title: string; description: string; }
+const { title, description } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const path = Astro.url.pathname.startsWith(base) ? Astro.url.pathname.slice(base.length) || '/' : Astro.url.pathname;
+const protectedRoute = path.startsWith('/admin') || path.startsWith('/account') || path.startsWith('/cart') || path.startsWith('/checkout') || path.startsWith('/order');
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <script>
+      import { installAuthenticatedFetch } from '../lib/auth';
+      installAuthenticatedFetch();
+    </script>
+    {protectedRoute && <AuthGate admin={path.startsWith('/admin')} client:load />}
+    <Header />
+    <main><slot /></main>
+    <Footer />
+  </body>
+</html>

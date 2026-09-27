@@ -1,0 +1,27 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<BaseLayout title="Porsche Performance Studio" description="Curated performance upgrades for modern Porsche models.">
+  <section class="hero">
+    <img src={`${base}/images/catalog-workshop.png`} alt="Porsche performance workshop" />
+    <div class="hero-shade"></div>
+    <div class="hero-copy">
+      <h1>Built for the track. <em>Unleashed on the streets.</em></h1>
+      <a class="button-light" href={`${base}/catalog`}>Your Performance Journey begins Here <span aria-hidden="true">→</span></a>
+    </div>
+    <div class="hero-index"><span>01</span><div></div><span>03</span></div>
+  </section>
+  <section class="manifesto">
+    <p class="eyebrow dark">THE STUDIO</p>
+    <div>
+      <h2>Performance is personal.</h2>
+      <p>From sharper dynamics to considered materials, each upgrade is chosen to strengthen the connection between driver, machine, and road.</p>
+    </div>
+  </section>
+  <section class="feature-strip">
+    <article><span>01</span><h3>Dynamics</h3><p>Chassis and braking upgrades tuned for more direct feedback.</p></article>
+    <article><span>02</span><h3>Aerodynamics</h3><p>Functional forms shaped around balance and stability.</p></article>
+    <article><span>03</span><h3>Craft</h3><p>Purposeful details finished to an exacting standard.</p></article>
+  </section>
+</BaseLayout>

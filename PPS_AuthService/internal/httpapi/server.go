@@ -87,15 +87,34 @@ type tokenRequest struct {
 	Code         string `json:"code"`
 	CodeVerifier string `json:"codeVerifier"`
 	RedirectURI  string `json:"redirectUri"`
+	GrantType    string `json:"grantType"`
+	RefreshToken string `json:"refreshToken"`
 }
 
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	var input tokenRequest
-	if err := decodeJSON(r, &input); err != nil || input.Code == "" || !verifierPattern.MatchString(input.CodeVerifier) || !allowed(s.cfg.CallbackURLs, input.RedirectURI) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "code, valid codeVerifier, and approved redirectUri are required")
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", "a valid token request is required")
 		return
 	}
-	form := url.Values{"grant_type": {"authorization_code"}, "client_id": {s.cfg.ClientID}, "code": {input.Code}, "code_verifier": {input.CodeVerifier}, "redirect_uri": {input.RedirectURI}}
+	form := url.Values{"client_id": {s.cfg.ClientID}}
+	if input.GrantType == "refresh_token" {
+		if input.RefreshToken == "" || len(input.RefreshToken) > 8192 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "a refresh token is required")
+			return
+		}
+		form.Set("grant_type", "refresh_token")
+		form.Set("refresh_token", input.RefreshToken)
+	} else {
+		if input.Code == "" || !verifierPattern.MatchString(input.CodeVerifier) || !allowed(s.cfg.CallbackURLs, input.RedirectURI) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "code, valid codeVerifier, and approved redirectUri are required")
+			return
+		}
+		form.Set("grant_type", "authorization_code")
+		form.Set("code", input.Code)
+		form.Set("code_verifier", input.CodeVerifier)
+		form.Set("redirect_uri", input.RedirectURI)
+	}
 	request, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, s.cfg.CognitoDomain+"/oauth2/token", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response, err := s.client.Do(request)
