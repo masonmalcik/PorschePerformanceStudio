@@ -34,6 +34,10 @@ export class PaymentService {
   }
 
   public async processWebhook(event: Stripe.Event): Promise<{ duplicate: boolean }> {
+    if (event.livemode) {
+      this.logger.warn({ eventId: event.id }, "Rejected live-mode Stripe event in the PPS demo");
+      throw new PaymentProviderError();
+    }
     if (event.type !== "payment_intent.succeeded" && event.type !== "payment_intent.payment_failed") {
       return { duplicate: false };
     }
