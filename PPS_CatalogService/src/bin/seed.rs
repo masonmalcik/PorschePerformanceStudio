@@ -16,8 +16,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database = connect(&config).await?;
     let summary = run(&database, profile).await?;
     println!(
-        "Seed complete: {} brands, {} categories",
-        summary.brands, summary.categories
+        "Seed complete: {} brands, {} categories, {} products",
+        summary.brands, summary.categories, summary.products
     );
     Ok(())
 }

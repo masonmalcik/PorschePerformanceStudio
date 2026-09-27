@@ -1,0 +1,87 @@
+name: Catalog CI and deploy
+
+on:
+  pull_request:
+    paths:
+      - "PPS_CatalogService/**"
+      - ".github/workflows/catalog-deploy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "PPS_CatalogService/**"
+      - ".github/workflows/catalog-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: catalog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: PPS_CatalogService
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88"
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: PPS_CatalogService
+      - run: cargo fmt --all -- --check
+      - run: cargo test --all-targets
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: sam validate --lint
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: development
+    defaults:
+      run:
+        working-directory: PPS_CatalogService
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88"
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: cargo install cargo-lambda --locked
+      - run: cargo lambda build --release --arm64 --bin api
+      - run: sam build
+      - name: Deploy Catalog
+        run: >-
+          sam deploy
+          --stack-name pps-catalog-dev
+          --region us-east-1
+          --resolve-s3
+          --capabilities CAPABILITY_IAM
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
+          --parameter-overrides
+          MongoDbSecretArn=${{ vars.MONGODB_SECRET_ARN }}
+          MongoDbDatabase=pps_catalog
+          CognitoIssuer=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_M6K1hvDSx
+          CognitoClientId=1n58iicfsjglca4bghrvjhon8q
+          CognitoJwksUrl=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_M6K1hvDSx/.well-known/jwks.json
+      - name: Upload Catalog assets
+        run: |
+          bucket=$(aws cloudformation describe-stacks --stack-name pps-catalog-dev --query "Stacks[0].Outputs[?OutputKey=='AssetsBucketName'].OutputValue" --output text)
+          aws s3 sync assets "s3://${bucket}" --delete --exclude "*README.md" --cache-control "public,max-age=31536000,immutable"
+      - name: Smoke test
+        run: |
+          api=$(aws cloudformation describe-stacks --stack-name pps-catalog-dev --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          curl --fail --retry 5 --retry-all-errors "${api}/health"
+          curl --fail --retry 5 --retry-all-errors "${api}/products?pageSize=5"

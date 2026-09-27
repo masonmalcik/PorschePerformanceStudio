@@ -91,11 +91,36 @@ pub async fn handle_request(request: Request, state: AppState) -> Response<Body>
         .and_then(|value| value.to_str().ok())
         .unwrap_or("unavailable")
         .to_owned();
+    let allowed_origin = request
+        .headers()
+        .get("origin")
+        .and_then(|value| value.to_str().ok())
+        .filter(|origin| is_allowed_origin(origin))
+        .map(str::to_owned);
 
-    let response = match route(request, state.clone()).await {
+    let mut response = match route(request, state.clone()).await {
         Ok(response) => response,
         Err(error) => error_response(error),
     };
+    if let Some(origin) = allowed_origin {
+        let headers = response.headers_mut();
+        if let Ok(value) = origin.parse() {
+            headers.insert("access-control-allow-origin", value);
+        }
+        headers.insert("vary", "Origin".parse().expect("valid Vary header"));
+        headers.insert(
+            "access-control-allow-methods",
+            "GET,POST,PATCH,DELETE,OPTIONS"
+                .parse()
+                .expect("valid CORS methods"),
+        );
+        headers.insert(
+            "access-control-allow-headers",
+            "Authorization,Content-Type,If-None-Match,X-Request-ID"
+                .parse()
+                .expect("valid CORS headers"),
+        );
+    }
 
     let duration_ms = started.elapsed().as_millis();
     let status = response.status().as_u16();
@@ -122,9 +147,26 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
     let path = normalized_path(request.uri().path());
 
     match (method, path) {
+        (Method::OPTIONS, _) => Response::builder()
+            .status(204)
+            .header("cache-control", "public, max-age=3600")
+            .body(Body::Empty)
+            .map_err(|error| AppError::InvalidData(error.to_string())),
         (Method::GET, "") | (Method::GET, "/health") => {
             json_response(200, &json!({ "status": "healthy" }))
         }
+        (Method::GET, "/assets/products/product-placeholder.png") => image_response(
+            "image/png",
+            include_bytes!("../../assets/products/product-placeholder.png"),
+        ),
+        (Method::GET, "/assets/brands/pps-performance.png") => image_response(
+            "image/png",
+            include_bytes!("../../assets/brands/pps-performance.png"),
+        ),
+        (Method::GET, "/assets/Page-Backgrounds/catalog-workshop.png") => image_response(
+            "image/png",
+            include_bytes!("../../assets/Page-Backgrounds/catalog-workshop.png"),
+        ),
         (Method::GET, "/api-docs/openapi.json") => json_response(200, &openapi::document()),
         (Method::GET, "/products") => {
             let query = parse_product_query(request.uri().query())?;
@@ -400,6 +442,18 @@ fn json_response<T: Serialize>(status: u16, value: &T) -> Result<Response<Body>,
         .map_err(|error| AppError::InvalidData(error.to_string()))
 }
 
+fn image_response(
+    content_type: &'static str,
+    bytes: &'static [u8],
+) -> Result<Response<Body>, AppError> {
+    Response::builder()
+        .status(200)
+        .header("content-type", content_type)
+        .header("cache-control", "public, max-age=86400, s-maxage=604800")
+        .body(Body::Binary(bytes.to_vec()))
+        .map_err(|error| AppError::InvalidData(error.to_string()))
+}
+
 fn error_response(error: AppError) -> Response<Body> {
     tracing::warn!(event = "request_failed", error = %error);
     error.into_response()
@@ -419,6 +473,14 @@ fn normalized_path(path: &str) -> &str {
     } else {
         path
     }
+}
+
+fn is_allowed_origin(origin: &str) -> bool {
+    std::env::var("CORS_ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:3000,http://localhost:5173".to_owned())
+        .split(',')
+        .map(str::trim)
+        .any(|allowed| allowed == origin)
 }
 
 #[cfg(test)]
@@ -624,5 +686,49 @@ mod tests {
             .body(Body::Text(r#"{"name":"911","modelCode":"911"}"#.to_owned()))
             .unwrap();
         assert_eq!(handle_request(admin_request, state()).await.status(), 201);
+    }
+
+    #[tokio::test]
+    async fn packaged_product_asset_is_public_and_cacheable() {
+        let request = lambda_http::http::Request::<()>::builder()
+            .uri("/assets/products/product-placeholder.png")
+            .body(Body::Empty)
+            .expect("asset request should build");
+        let response = handle_request(request, state()).await;
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()["content-type"], "image/png");
+        assert!(response.headers()["cache-control"]
+            .to_str()
+            .expect("cache-control should be valid")
+            .contains("s-maxage"));
+        assert!(matches!(response.body(), Body::Binary(bytes) if !bytes.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn preflight_requests_allow_only_configured_origins() {
+        let request = lambda_http::http::Request::<()>::builder()
+            .method(Method::OPTIONS)
+            .uri("/products")
+            .header("origin", "http://localhost:3000")
+            .body(Body::Empty)
+            .expect("preflight request should build");
+        let response = handle_request(request, state()).await;
+        assert_eq!(response.status(), 204);
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            "http://localhost:3000"
+        );
+
+        let denied = lambda_http::http::Request::<()>::builder()
+            .method(Method::OPTIONS)
+            .uri("/products")
+            .header("origin", "https://untrusted.example")
+            .body(Body::Empty)
+            .expect("preflight request should build");
+        let denied_response = handle_request(denied, state()).await;
+        assert_eq!(denied_response.status(), 204);
+        assert!(!denied_response
+            .headers()
+            .contains_key("access-control-allow-origin"));
     }
 }

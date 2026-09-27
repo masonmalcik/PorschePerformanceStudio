@@ -123,6 +123,13 @@
       "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/api-docs/openapi.json", "extra_config": {"qos/http-cache": {"shared": true}}}]
     },
     {
+      "endpoint": "/api/v1/catalog/assets/products/{name}",
+      "method": "GET",
+      "output_encoding": "no-op",
+      "input_headers": ["Accept", "If-None-Match"],
+      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/assets/products/{name}"}]
+    },
+    {
       "endpoint": "/api/v1/catalog/products",
       "method": "GET",
       "input_query_strings": ["pageSize", "cursor", "brandId", "categoryId", "saleType", "minPrice", "maxPrice", "q", "sort", "direction"],

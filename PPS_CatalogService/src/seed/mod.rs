@@ -2,7 +2,7 @@ mod data;
 
 use crate::{data::mongodb::migrations::migrate, AppError};
 use mongodb::{
-    bson::{doc, oid::ObjectId, DateTime, Document},
+    bson::{doc, oid::ObjectId, DateTime, Decimal128, Document},
     Database,
 };
 use serde::Serialize;
@@ -40,6 +40,7 @@ impl std::error::Error for SeedProfileError {}
 pub struct SeedSummary {
     pub brands: usize,
     pub categories: usize,
+    pub products: usize,
 }
 
 pub async fn run(database: &Database, profile: SeedProfile) -> Result<SeedSummary, AppError> {
@@ -67,12 +68,60 @@ pub async fn run(database: &Database, profile: SeedProfile) -> Result<SeedSummar
         }).upsert(true).await?;
     }
 
+    let asset_base_url = std::env::var("ASSET_BASE_URL")
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .to_owned();
+    let products = database.collection::<Document>("products");
+    for seed in data::PRODUCTS {
+        let brand_id = brands
+            .find_one(doc! { "brandCode": seed.brand_code })
+            .await?
+            .and_then(|value| value.get_object_id("_id").ok())
+            .ok_or_else(|| {
+                AppError::InvalidData(format!("missing seed brand {}", seed.brand_code))
+            })?;
+        let category_id = categories
+            .find_one(doc! { "categoryCode": seed.category_code })
+            .await?
+            .and_then(|value| value.get_object_id("_id").ok())
+            .ok_or_else(|| {
+                AppError::InvalidData(format!("missing seed category {}", seed.category_code))
+            })?;
+        let price = Decimal128::from_str(seed.price)
+            .map_err(|error| AppError::InvalidData(format!("invalid seed price: {error}")))?;
+        let image_urls = if asset_base_url.is_empty() {
+            Vec::<String>::new()
+        } else {
+            vec![format!("{asset_base_url}/products/{}", seed.image_name)]
+        };
+        products.update_one(doc! { "sku": seed.sku }, doc! {
+            "$set": {
+                "modelNumber": seed.model_number,
+                "brandId": brand_id,
+                "price": price,
+                "currency": "USD",
+                "name": seed.name,
+                "attributes": [],
+                "description": seed.description,
+                "imageName": seed.image_name,
+                "imageUrls": image_urls,
+                "saleType": "retail",
+                "categoryIds": [category_id],
+                "updatedAt": DateTime::now(),
+                "isActive": true
+            },
+            "$setOnInsert": { "_id": ObjectId::new(), "createdAt": DateTime::now(), "version": 1_i64 }
+        }).upsert(true).await?;
+    }
+
     database.collection::<Document>("_catalog_seed_runs").insert_one(doc! {
         "profile": format!("{profile:?}").to_ascii_lowercase(), "version": 1_i32,
-        "checksum": "reference-taxonomy-v2", "executedAt": DateTime::now(), "status": "succeeded"
+        "checksum": "reference-taxonomy-and-products-v3", "executedAt": DateTime::now(), "status": "succeeded"
     }).await?;
     Ok(SeedSummary {
         brands: data::BRANDS.len(),
         categories: data::CATEGORIES.len(),
+        products: data::PRODUCTS.len(),
     })
 }

@@ -104,6 +104,28 @@ pub const CATEGORIES: &[CategorySeed] = &[
     },
 ];
 
+pub struct ProductSeed {
+    pub sku: &'static str,
+    pub model_number: &'static str,
+    pub brand_code: &'static str,
+    pub category_code: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub image_name: &'static str,
+    pub price: &'static str,
+}
+
+pub const PRODUCTS: &[ProductSeed] = &[ProductSeed {
+    sku: "PPS-BRK-001",
+    model_number: "PPS-PERFORMANCE-BRAKE-01",
+    brand_code: "PORSCHE",
+    category_code: "BRAKES",
+    name: "Performance Brake Package",
+    description: "High-performance ventilated brake package for track and spirited road use.",
+    image_name: "product-placeholder.png",
+    price: "2499.00",
+}];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,6 +149,15 @@ mod tests {
                 .join("brands")
                 .join(seed.image_name);
             assert!(path.is_file(), "missing brand image {}", path.display());
+        }
+        for seed in PRODUCTS {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("assets")
+                .join("products")
+                .join(seed.image_name);
+            assert!(path.is_file(), "missing product image {}", path.display());
+            assert!(brand_codes.contains(seed.brand_code));
+            assert!(category_codes.contains(seed.category_code));
         }
     }
 }
