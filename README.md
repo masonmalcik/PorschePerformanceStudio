@@ -6,7 +6,7 @@ Polyglot, serverless microservices intended for AWS Lambda.
 
 | Service | Stack | Status |
 | --- | --- | --- |
-| `PPS_CatalogService` | Rust + MongoDB Atlas | Initial scaffold |
+| `PPS_CatalogService` | Rust + MongoDB Atlas | Implemented; AWS deployment pending |
 | `PPS_AuthService` | Go + Cognito + DynamoDB | Implemented and deployed |
 | `PPS_CartService` | Node.js/TypeScript + DynamoDB + Memcached | Implemented |
 | `PPS_OrderService` | Node.js/TypeScript + PostgreSQL + transactional outbox | Implemented |

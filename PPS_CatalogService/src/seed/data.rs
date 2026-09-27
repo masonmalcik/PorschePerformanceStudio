@@ -7,7 +7,7 @@ pub struct BrandSeed {
 pub const BRANDS: &[BrandSeed] = &[BrandSeed {
     code: "PORSCHE",
     name: "Porsche",
-    image_name: "placeholder.svg",
+    image_name: "pps-performance.png",
     description: "Porsche original-equipment and branded products",
 }];
 

@@ -22,7 +22,7 @@ use pps_catalog_service::{
         },
         observability::TracingMetrics,
         search::{ElasticsearchProductSearch, SearchableProductRepository},
-        security::{DevelopmentAuthorizer, DisabledAuthorizer},
+        security::{CognitoAuthorizer, DevelopmentAuthorizer, DisabledAuthorizer},
     },
     presentation::{handle_request, AdminApplications, AppState},
     Config,
@@ -122,6 +122,23 @@ async fn main() -> Result<(), Error> {
             config.admin_development_token.clone().ok_or_else(|| {
                 pps_catalog_service::AppError::Configuration(
                     "ADMIN_DEV_TOKEN must be set in development auth mode".into(),
+                )
+            })?,
+        )?),
+        "cognito" => Arc::new(CognitoAuthorizer::new(
+            config.cognito_issuer.clone().ok_or_else(|| {
+                pps_catalog_service::AppError::Configuration(
+                    "COGNITO_ISSUER must be set in cognito auth mode".into(),
+                )
+            })?,
+            config.cognito_client_id.clone().ok_or_else(|| {
+                pps_catalog_service::AppError::Configuration(
+                    "COGNITO_CLIENT_ID must be set in cognito auth mode".into(),
+                )
+            })?,
+            config.cognito_jwks_url.clone().ok_or_else(|| {
+                pps_catalog_service::AppError::Configuration(
+                    "COGNITO_JWKS_URL must be set in cognito auth mode".into(),
                 )
             })?,
         )?),

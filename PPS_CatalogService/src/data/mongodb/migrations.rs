@@ -32,14 +32,14 @@ pub async fn migrate(database: &Database) -> Result<(), AppError> {
         .collection::<Document>("brands")
         .update_many(
             doc! { "imageName": { "$exists": false } },
-            doc! { "$set": { "imageName": "placeholder.svg", "updatedAt": DateTime::now() } },
+            doc! { "$set": { "imageName": "pps-performance.png", "updatedAt": DateTime::now() } },
         )
         .await?;
     database
         .collection::<Document>("products")
         .update_many(
             doc! { "imageName": { "$exists": false } },
-            doc! { "$set": { "imageName": "placeholder.svg", "updatedAt": DateTime::now() } },
+            doc! { "$set": { "imageName": "product-placeholder.png", "updatedAt": DateTime::now() } },
         )
         .await?;
 

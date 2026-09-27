@@ -10,10 +10,7 @@ use pps_catalog_service::{
 async fn vehicle_model_repository_maps_duplicate_codes_to_conflict() {
     let uri = std::env::var("MONGODB_URI").expect("MONGODB_URI must be set");
     let client = Client::with_uri_str(uri).await.expect("MongoDB connection");
-    let database_name = format!(
-        "pps_catalog_test_{}",
-        mongodb::bson::oid::ObjectId::new().to_hex()
-    );
+    let database_name = format!("pps_ct_{}", mongodb::bson::oid::ObjectId::new().to_hex());
     let database = client.database(&database_name);
     database
         .collection::<mongodb::bson::Document>("vehicle_models")

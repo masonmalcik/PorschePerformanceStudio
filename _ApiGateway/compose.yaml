@@ -7,7 +7,7 @@ services:
     environment:
       FC_ENABLE: "1"
       FC_OUT: /tmp/krakend.json
-      PPS_CATALOG_URL: ${PPS_CATALOG_URL:-http://catalog-service:8081}
+      PPS_CATALOG_URL: ${PPS_CATALOG_URL:-http://catalog-service:3003}
       PPS_AUTH_URL: ${PPS_AUTH_URL:-http://auth-service:8082}
       PPS_AUTH_PREFIX: ${PPS_AUTH_PREFIX:-}
       PPS_AUTH_MODE: ${PPS_AUTH_MODE:-development}

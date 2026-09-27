@@ -33,6 +33,99 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.5
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  catalog-service:
+    build:
+      context: ./PPS_CatalogService
+    env_file:
+      - ./PPS_CatalogService/.env
+    environment:
+      PORT: 3003
+      MONGODB_DATABASE: pps_catalog
+      ASSET_ROOT: /app/assets
+      REDIS_MODE: standalone
+      REDIS_CLUSTER_URLS: redis://redis:6379
+      REDIS_POOL_SIZE: 8
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_TIMEOUT_MS: 1000
+      ADMIN_AUTH_MODE: cognito
+      COGNITO_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_M6K1hvDSx
+      COGNITO_CLIENT_ID: 1n58iicfsjglca4bghrvjhon8q
+      COGNITO_JWKS_URL: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_M6K1hvDSx/.well-known/jwks.json
+    ports:
+      - "127.0.0.1:3003:3003"
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  api-gateway:
+    image: krakend:2.13.3
+    command: ["run", "-c", "/etc/krakend/krakend.tmpl"]
+    environment:
+      FC_ENABLE: "1"
+      FC_OUT: /tmp/krakend.json
+      PPS_CATALOG_URL: http://catalog-service:3003
+      PPS_AUTH_URL: http://host.docker.internal:8082
+      PPS_AUTH_PREFIX: ""
+      PPS_AUTH_MODE: jwt
+      PPS_JWKS_URL: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_M6K1hvDSx/.well-known/jwks.json
+      PPS_JWT_ISSUER: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_M6K1hvDSx
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9091:9091"
+    volumes:
+      - ./_ApiGateway/config:/etc/krakend:ro
+    depends_on:
+      catalog-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/__health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
   cart-service:
     build:
       context: ./PPS_CartService
@@ -114,3 +207,5 @@ services:
 
 volumes:
   rabbitmq-data:
+  redis-data:
+  elasticsearch-data:

@@ -6,6 +6,7 @@ rust-version = "1.88"
 
 [dependencies]
 async-trait = "0.1"
+axum = "0.8"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
@@ -25,6 +26,8 @@ url = "2"
 bb8 = "0.9"
 redis = { version = "0.32", features = ["tokio-comp", "cluster-async"] }
 elasticsearch = { version = "9.1.0-alpha.1", default-features = false, features = ["rustls-tls"] }
+jsonwebtoken = "9"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
@@ -41,3 +44,7 @@ path = "src/bin/migrate.rs"
 [[bin]]
 name = "seed"
 path = "src/bin/seed.rs"
+
+[[bin]]
+name = "local"
+path = "src/bin/local.rs"

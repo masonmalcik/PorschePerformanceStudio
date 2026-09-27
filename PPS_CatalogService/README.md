@@ -2,9 +2,9 @@
 
 Rust AWS Lambda API backed by one MongoDB Atlas database. The service owns brands, categories, products, Porsche vehicle taxonomy/configuration, and product fitments.
 
-Brand documents store a required `imageName` string. Corresponding files live under `assets/brands`; MongoDB never stores image bytes or a machine-specific path. The included placeholder should be replaced with approved brand artwork.
+Brand documents store a required `imageName` string. Corresponding files live under `assets/brands`; MongoDB never stores image bytes or a machine-specific path. Original text-free PPS artwork is included so development environments do not depend on third-party trademark files.
 
-Future application imagery is organized under `assets/products`, `assets/Page-Backgrounds`, and `assets/vehicle-models`.
+Catalog product and page artwork is organized under `assets/products`, `assets/Page-Backgrounds`, and `assets/vehicle-models`.
 
 ## N-tier architecture
 
@@ -84,7 +84,7 @@ Elasticsearch is an optional read optimization. Transport timeouts, unavailable 
 
 `GET /products` accepts `pageSize` (1-100), `cursor`, `brandId`, `categoryId`, `saleType`, `minPrice`, `maxPrice`, `q`, `sort` (`name`, `newest`, or `price`), and `direction` (`asc` or `desc`). Unknown or duplicate parameters are rejected.
 
-For local development only, set `ADMIN_AUTH_MODE=development`, choose an `ADMIN_DEV_TOKEN` of at least 24 characters, and send it as `x-pps-admin-key` on administrative requests. The default `disabled` mode denies every administrative request. The authorization port is ready for a future Cognito adapter.
+For local development only, set `ADMIN_AUTH_MODE=development`, choose an `ADMIN_DEV_TOKEN` of at least 24 characters, and send it as `x-pps-admin-key` on administrative requests. Production uses `ADMIN_AUTH_MODE=cognito` with `COGNITO_ISSUER`, `COGNITO_CLIENT_ID`, and `COGNITO_JWKS_URL`. The service verifies Cognito access-token signatures locally, requires the `pps-api/catalog.admin` scope, and caches signing keys for 24 hours.
 
 HTTP activity and application counters are emitted as structured JSON logs. AWS can turn the `application_metric` records into CloudWatch metric filters; a future deployment can swap the metrics adapter for Embedded Metric Format without changing application code.
 

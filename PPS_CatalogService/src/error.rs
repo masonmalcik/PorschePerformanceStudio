@@ -17,6 +17,8 @@ pub enum AppError {
     Unauthorized,
     #[error("permission denied")]
     Forbidden,
+    #[error("dependent service unavailable: {0}")]
+    ServiceUnavailable(String),
     #[error("database operation failed")]
     Database(#[from] mongodb::error::Error),
     #[error("serialization failed")]
@@ -34,6 +36,14 @@ impl AppError {
             Self::MethodNotAllowed => (405, "method_not_allowed", "Method not allowed"),
             Self::Unauthorized => (401, "unauthorized", "Authentication required"),
             Self::Forbidden => (403, "forbidden", "Permission denied"),
+            Self::ServiceUnavailable(_) => {
+                tracing::error!(error = %self, "authentication dependency unavailable");
+                (
+                    503,
+                    "service_unavailable",
+                    "Authentication service temporarily unavailable",
+                )
+            }
             Self::Configuration(_)
             | Self::Database(_)
             | Self::Serialization(_)

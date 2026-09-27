@@ -31,6 +31,15 @@ Parameters:
     Default: 500
     MinValue: 50
     MaxValue: 5000
+  CognitoIssuer:
+    Type: String
+    Description: Cognito User Pool issuer URL
+  CognitoClientId:
+    Type: String
+    Description: Cognito app client ID accepted by the Catalog service
+  CognitoJwksUrl:
+    Type: String
+    Description: Cognito User Pool JWKS URL
 
 Resources:
   CatalogFunction:
@@ -56,7 +65,10 @@ Resources:
           REDIS_POOL_SIZE: !Ref RedisPoolSize
           ELASTICSEARCH_URL: !Ref ElasticsearchUrl
           ELASTICSEARCH_TIMEOUT_MS: !Ref ElasticsearchTimeoutMs
-          ADMIN_AUTH_MODE: disabled
+          ADMIN_AUTH_MODE: cognito
+          COGNITO_ISSUER: !Ref CognitoIssuer
+          COGNITO_CLIENT_ID: !Ref CognitoClientId
+          COGNITO_JWKS_URL: !Ref CognitoJwksUrl
           RUST_LOG: info
       Events:
         ProxyApi:
