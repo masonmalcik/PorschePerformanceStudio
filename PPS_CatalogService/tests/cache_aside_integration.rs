@@ -28,6 +28,7 @@ async fn sequential_cache_aside_product_lifecycle() -> Result<(), Box<dyn std::e
     // Step A: the first read misses Redis, fetches the database, and backfills.
     let first = repository.get_product(id.clone()).await;
     assert!(first.is_ok(), "initial database-backed read should succeed");
+    assert!(matches!(&first, Ok(Some(product)) if product.id == id));
     assert_eq!(database.read_count(), 1);
     assert_eq!(cache.miss_count(), 1);
     assert_eq!(cache.put_count(), 1);
@@ -36,6 +37,7 @@ async fn sequential_cache_aside_product_lifecycle() -> Result<(), Box<dyn std::e
     // Step B: the second read is served directly from Redis.
     let second = repository.get_product(id.clone()).await;
     assert!(second.is_ok(), "cached read should succeed");
+    assert!(matches!(&second, Ok(Some(product)) if product.id == id));
     assert_eq!(database.read_count(), 1, "cache hit must skip the database");
     assert_eq!(cache.hit_count(), 1);
 
@@ -46,8 +48,9 @@ async fn sequential_cache_aside_product_lifecycle() -> Result<(), Box<dyn std::e
     assert!(!cache.contains(&id).await);
 
     // Step D: the third read misses again and returns to the database.
-    let third = repository.get_product(id).await;
+    let third = repository.get_product(id.clone()).await;
     assert!(third.is_ok(), "post-eviction database read should succeed");
+    assert!(matches!(&third, Ok(Some(product)) if product.id == id));
     assert_eq!(database.read_count(), 2);
     assert_eq!(cache.miss_count(), 2);
     assert_eq!(cache.put_count(), 2);
@@ -70,14 +73,15 @@ async fn disconnected_cache_logs_warning_and_returns_database_product(
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let result = repository.get_product(ProductId("123".into())).await;
+    let id = ProductId("123".into());
+    let result = repository.get_product(id.clone()).await;
 
     assert!(
         result.is_ok(),
         "Redis failure must fail open to the database"
     );
     assert!(
-        matches!(result, Ok(Some(_))),
+        matches!(&result, Ok(Some(product)) if product.id == id),
         "the database product must be returned"
     );
     assert_eq!(database.read_count(), 1);
