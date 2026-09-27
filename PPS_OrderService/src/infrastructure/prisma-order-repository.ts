@@ -97,7 +97,10 @@ export class PrismaOrderRepository implements OrderRepository, OutboxStore {
           data: input.events.map((event) => ({
             aggregateId: current.id,
             type: event.type,
-            payload: JSON.parse(JSON.stringify(event.data)) as Prisma.InputJsonValue,
+            payload: JSON.parse(JSON.stringify(event.type === "PaymentRequested" ? {
+              ...event.data, orderId: current.id, userId: current.userId,
+              totalAmount: current.totalAmount.toFixed(2), currency: "usd",
+            } : event.data)) as Prisma.InputJsonValue,
           })),
         });
       }

@@ -4,7 +4,7 @@
 *.pem
 samconfig.toml
 .aws-sam/
+deploy/artifacts/
 .idea/
 .vscode/
 .DS_Store
-

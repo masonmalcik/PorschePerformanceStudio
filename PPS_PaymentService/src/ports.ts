@@ -26,6 +26,19 @@ export interface PaymentRepository {
   }): Promise<{ duplicate: boolean; transaction: PaymentTransaction }>;
 }
 
+export interface PaymentOutboxEvent {
+  eventId: string;
+  aggregateId: string;
+  type: string;
+  occurredAt: string;
+  data: Record<string, unknown>;
+}
+
+export interface PaymentOutboxStore {
+  claimBatch(limit: number): Promise<PaymentOutboxEvent[]>;
+  markPublished(eventId: string): Promise<void>;
+}
+
 export interface AppLogger {
   info(context: object, message: string): void;
   warn(context: object, message: string): void;

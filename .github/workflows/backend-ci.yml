@@ -1,0 +1,64 @@
+name: Backend CI
+
+on:
+  pull_request:
+    paths:
+      - "PPS_CartService/**"
+      - "PPS_OrderService/**"
+      - "PPS_PaymentService/**"
+      - "packages/messaging/**"
+      - "_ApiGateway/aws/**"
+      - "deploy/**"
+      - "docker-compose.yml"
+      - ".github/workflows/backend-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "PPS_CartService/**"
+      - "PPS_OrderService/**"
+      - "PPS_PaymentService/**"
+      - "packages/messaging/**"
+      - "_ApiGateway/aws/**"
+      - "deploy/**"
+      - "docker-compose.yml"
+      - ".github/workflows/backend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  node-services:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        directory: [packages/messaging, PPS_CartService, PPS_OrderService, PPS_PaymentService]
+    defaults:
+      run:
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  infrastructure:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: aws-actions/setup-sam@v2
+      - name: Build deployment artifacts
+        shell: pwsh
+        run: ./deploy/build-lambda-artifacts.ps1
+      - name: Validate SAM template
+        run: sam validate --lint --template-file ./_ApiGateway/aws/template.yaml
+      - name: Validate Docker Compose
+        run: docker compose config --quiet

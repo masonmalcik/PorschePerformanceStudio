@@ -18,6 +18,11 @@ export const checkoutTopology: SubscriptionDefinition[] = [
   { queueName: "ecom.notification.payment-succeeded", routingKeys: ["payment.succeeded"] },
   { queueName: "ecom.notification.payment-failed", routingKeys: ["payment.failed"] },
   { queueName: "ecom.notification.inventory-rejected", routingKeys: ["inventory.rejected"] },
+  { queueName: "ecom.inventory.release-requested", routingKeys: ["inventory.release-requested"] },
+  { queueName: "ecom.notification.order-confirmed", routingKeys: ["order.confirmed"] },
+  { queueName: "ecom.notification.order-failed", routingKeys: ["order.failed"] },
+  { queueName: "ecom.notification.order-cancelled", routingKeys: ["order.cancelled"] },
+  { queueName: "ecom.notification.order-compensated", routingKeys: ["order.compensated"] },
 ];
 
 export async function assertBaseTopology(channel: ConfirmChannel): Promise<void> {

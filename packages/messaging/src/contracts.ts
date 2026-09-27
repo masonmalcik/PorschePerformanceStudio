@@ -28,6 +28,13 @@ export const eventSchemas = {
   "inventory.released": z.object({
     orderId: z.string().uuid(), reservationId: z.string().min(1).max(255),
   }).strict(),
+  "inventory.release-requested": z.object({
+    orderId: z.string().uuid(), reason: z.string().min(1).max(1000),
+  }).strict(),
+  "order.confirmed": z.object({ orderId: z.string().uuid() }).strict(),
+  "order.failed": z.object({ orderId: z.string().uuid(), reason: z.string().min(1).max(1000) }).strict(),
+  "order.cancelled": z.object({ orderId: z.string().uuid() }).strict(),
+  "order.compensated": z.object({ orderId: z.string().uuid() }).strict(),
 } as const;
 
 export type RoutingKey = keyof typeof eventSchemas;

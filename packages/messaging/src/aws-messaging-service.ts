@@ -46,6 +46,8 @@ export class AwsMessagingService {
     }));
     return envelope;
   }
+
+  public close(): Promise<void> { return Promise.resolve(); }
 }
 
 export type SqsEventHandler<K extends RoutingKey> = (event: EventEnvelope<K>) => Promise<void>;
@@ -69,13 +71,44 @@ export function createSqsBatchHandler<K extends RoutingKey>(
   };
 }
 
+export type SqsEventHandlers = { [K in RoutingKey]?: SqsEventHandler<K> };
+
+export function createSqsRouter(
+  handlers: SqsEventHandlers,
+  logger: Pick<Console, "warn"> = console,
+): (event: SQSEvent) => Promise<SQSBatchResponse> {
+  return async (event) => {
+    const batchItemFailures: SQSBatchResponse["batchItemFailures"] = [];
+    for (const record of event.Records) {
+      try {
+        const decoded = decodeRecord(record);
+        const base = envelopeSchema.parse(decoded);
+        if (!(base.type in eventSchemas)) throw new Error(`Unsupported event type: ${base.type}`);
+        const type = base.type as RoutingKey;
+        const payload = eventSchemas[type].parse(base.payload);
+        const handler = handlers[type] as ((event: EventEnvelope) => Promise<void>) | undefined;
+        if (!handler) throw new Error(`No handler registered for ${type}`);
+        await handler({ ...base, type, payload } as EventEnvelope);
+      } catch (error) {
+        logger.warn("SQS event routing failed", { error, messageId: record.messageId });
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+      }
+    }
+    return { batchItemFailures };
+  };
+}
+
 function parseRecord<K extends RoutingKey>(record: SQSRecord, routingKey: K): EventEnvelope<K> {
-  const decoded = JSON.parse(record.body) as unknown;
-  const message = isSnsNotification(decoded) ? JSON.parse(decoded.Message) as unknown : decoded;
+  const message = decodeRecord(record);
   const base = envelopeSchema.parse(message);
   if (base.type !== routingKey) throw new Error(`Expected ${routingKey}, received ${base.type}`);
   const payload = eventSchemas[routingKey].parse(base.payload) as EventPayloads[K];
   return { ...base, type: routingKey, payload } as EventEnvelope<K>;
+}
+
+function decodeRecord(record: SQSRecord): unknown {
+  const decoded = JSON.parse(record.body) as unknown;
+  return isSnsNotification(decoded) ? JSON.parse(decoded.Message) as unknown : decoded;
 }
 
 function isSnsNotification(value: unknown): value is { Type: "Notification"; Message: string } {

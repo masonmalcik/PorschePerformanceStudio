@@ -159,7 +159,8 @@ services:
 
   order-service:
     build:
-      context: ./PPS_OrderService
+      context: .
+      dockerfile: PPS_OrderService/Dockerfile
     env_file:
       - ./PPS_OrderService/.env
     environment:
@@ -183,7 +184,8 @@ services:
 
   payment-service:
     build:
-      context: ./PPS_PaymentService
+      context: .
+      dockerfile: PPS_PaymentService/Dockerfile
     env_file:
       - ./PPS_PaymentService/.env
     environment:

@@ -1,11 +1,11 @@
 import { PaymentStatus as PrismaStatus, Prisma, PrismaClient } from "@prisma/client";
 import type { CreatePaymentInput, PaymentStatus, PaymentTransaction } from "../domain/payment.js";
 import { UnknownPaymentIntentError } from "../domain/payment.js";
-import type { PaymentRepository } from "../ports.js";
+import type { PaymentOutboxStore, PaymentRepository } from "../ports.js";
 
 type PaymentRecord = Prisma.PaymentTransactionGetPayload<Record<string, never>>;
 
-export class PrismaPaymentRepository implements PaymentRepository {
+export class PrismaPaymentRepository implements PaymentRepository, PaymentOutboxStore {
   public constructor(private readonly prisma: PrismaClient) {}
 
   public async findByIdempotencyKey(key: string): Promise<PaymentTransaction | null> {
@@ -69,6 +69,7 @@ export class PrismaPaymentRepository implements PaymentRepository {
               orderId: current.orderId,
               paymentId: current.id,
               stripePaymentIntentId: current.stripePaymentIntentId,
+              amount: current.amount,
               ...(input.errorMessage ? { reason: input.errorMessage } : {}),
             },
           },
@@ -83,6 +84,15 @@ export class PrismaPaymentRepository implements PaymentRepository {
       }
       throw error;
     }
+  }
+
+  public async claimBatch(limit: number) {
+    const events = await this.prisma.paymentOutboxEvent.findMany({ where: { publishedAt: null }, orderBy: { createdAt: "asc" }, take: limit });
+    return events.map((event) => ({ eventId: event.id, aggregateId: event.aggregateId, type: event.type, occurredAt: event.createdAt.toISOString(), data: event.payload as Record<string, unknown> }));
+  }
+
+  public async markPublished(eventId: string): Promise<void> {
+    await this.prisma.paymentOutboxEvent.update({ where: { id: eventId }, data: { publishedAt: new Date() } });
   }
 
   private map(record: PaymentRecord): PaymentTransaction {

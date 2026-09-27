@@ -2,6 +2,17 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: PPS unified HTTP API and serverless checkout event topology
 
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [x86_64]
+    MemorySize: 512
+    Timeout: 30
+    Environment:
+      Variables:
+        NODE_ENV: production
+        MESSAGE_TRANSPORT: aws
+
 Parameters:
   Environment:
     Type: String
@@ -13,15 +24,18 @@ Parameters:
   CognitoAudience:
     Type: String
     Default: 1n58iicfsjglca4bghrvjhon8q
-  CartFunctionArn:
+  CartTableName:
     Type: String
-    Description: ARN of the deployed Cart HTTP Lambda
-  OrderFunctionArn:
+    Default: pps-carts-dev
+  OrderDatabaseSecretName:
     Type: String
-    Description: ARN of the deployed Order HTTP Lambda
-  PaymentFunctionArn:
+    Default: pps/order/dev
+  PaymentDatabaseSecretName:
     Type: String
-    Description: ARN of the deployed Payment HTTP Lambda
+    Default: pps/payment/dev
+  StripeSecretName:
+    Type: String
+    Default: pps/stripe/dev
   CatalogApiUrl:
     Type: String
     Default: https://lvnqza3dre.execute-api.us-east-1.amazonaws.com
@@ -65,7 +79,7 @@ Resources:
     Properties:
       ApiId: !Ref PpsHttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !Ref CartFunctionArn
+      IntegrationUri: !GetAtt CartFunction.Arn
       PayloadFormatVersion: '2.0'
       TimeoutInMillis: 15000
       RequestParameters:
@@ -75,7 +89,7 @@ Resources:
     Properties:
       ApiId: !Ref PpsHttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !Ref OrderFunctionArn
+      IntegrationUri: !GetAtt OrderFunction.Arn
       PayloadFormatVersion: '2.0'
       TimeoutInMillis: 15000
       RequestParameters:
@@ -85,7 +99,7 @@ Resources:
     Properties:
       ApiId: !Ref PpsHttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !Ref PaymentFunctionArn
+      IntegrationUri: !GetAtt PaymentFunction.Arn
       PayloadFormatVersion: '2.0'
       TimeoutInMillis: 15000
       RequestParameters:
@@ -95,7 +109,7 @@ Resources:
     Properties:
       ApiId: !Ref PpsHttpApi
       IntegrationType: AWS_PROXY
-      IntegrationUri: !Ref PaymentFunctionArn
+      IntegrationUri: !GetAtt PaymentFunction.Arn
       PayloadFormatVersion: '2.0'
       TimeoutInMillis: 15000
   CatalogIntegration:
@@ -123,6 +137,9 @@ Resources:
   OrderRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'ANY /api/v1/orders/{proxy+}', AuthorizationType: JWT, AuthorizerId: !Ref CognitoJwtAuthorizer, Target: !Sub 'integrations/${OrderIntegration}' }
+  OrderRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'POST /api/v1/orders', AuthorizationType: JWT, AuthorizerId: !Ref CognitoJwtAuthorizer, Target: !Sub 'integrations/${OrderIntegration}' }
   PaymentRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'ANY /api/v1/payments/{proxy+}', AuthorizationType: JWT, AuthorizerId: !Ref CognitoJwtAuthorizer, Target: !Sub 'integrations/${PaymentIntegration}' }
@@ -144,13 +161,13 @@ Resources:
 
   CartInvokePermission:
     Type: AWS::Lambda::Permission
-    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref CartFunctionArn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref CartFunction, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
   OrderInvokePermission:
     Type: AWS::Lambda::Permission
-    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref OrderFunctionArn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref OrderFunction, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
   PaymentInvokePermission:
     Type: AWS::Lambda::Permission
-    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref PaymentFunctionArn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref PaymentFunction, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
   EventsTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -228,7 +245,7 @@ Resources:
       Endpoint: !GetAtt InventoryEventsQueue.Arn
       RawMessageDelivery: true
       FilterPolicyScope: MessageAttributes
-      FilterPolicy: { eventType: [order.created] }
+      FilterPolicy: { eventType: [order.created, inventory.release-requested] }
   NotificationSubscription:
     Type: AWS::SNS::Subscription
     Properties:
@@ -237,7 +254,7 @@ Resources:
       Endpoint: !GetAtt NotificationEventsQueue.Arn
       RawMessageDelivery: true
       FilterPolicyScope: MessageAttributes
-      FilterPolicy: { eventType: [payment.succeeded, payment.failed, inventory.rejected] }
+      FilterPolicy: { eventType: [payment.succeeded, payment.failed, inventory.rejected, order.confirmed, order.failed, order.cancelled, order.compensated] }
 
   EventsQueuePolicy:
     Type: AWS::SQS::QueuePolicy
@@ -252,8 +269,167 @@ Resources:
             Resource: [!GetAtt PaymentEventsQueue.Arn, !GetAtt OrderEventsQueue.Arn, !GetAtt InventoryEventsQueue.Arn, !GetAtt NotificationEventsQueue.Arn]
             Condition: { ArnEquals: { aws:SourceArn: !Ref EventsTopic } }
 
+  CartFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub pps-cart-${Environment}
+      CodeUri: ../../deploy/artifacts/cart/
+      Handler: dist/lambda.handler
+      Environment:
+        Variables:
+          DYNAMODB_CART_TABLE: !Ref CartTableName
+          MEMCACHED_SERVERS: disabled
+          TRUSTED_USER_HEADER: x-authenticated-user-id
+          CORS_ORIGIN: '*'
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref CartTableName }
+
+  OrderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub pps-order-${Environment}
+      CodeUri: ../../deploy/artifacts/order/
+      Handler: dist/lambda.handler
+      Environment:
+        Variables:
+          DATABASE_URL: !Sub '{{resolve:secretsmanager:${OrderDatabaseSecretName}:SecretString:DATABASE_URL}}'
+          EVENTS_TOPIC_ARN: !Ref EventsTopic
+          TRUSTED_USER_HEADER: x-authenticated-user-id
+          CORS_ORIGIN: '*'
+      Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt EventsTopic.TopicName }
+
+  OrderEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub pps-order-events-${Environment}
+      CodeUri: ../../deploy/artifacts/order/
+      Handler: dist/lambda.events
+      Environment:
+        Variables:
+          DATABASE_URL: !Sub '{{resolve:secretsmanager:${OrderDatabaseSecretName}:SecretString:DATABASE_URL}}'
+          EVENTS_TOPIC_ARN: !Ref EventsTopic
+      Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt EventsTopic.TopicName }
+      Events:
+        CheckoutEvents:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrderEventsQueue.Arn
+            BatchSize: 10
+            FunctionResponseTypes: [ReportBatchItemFailures]
+
+  OrderOutboxFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub pps-order-outbox-${Environment}
+      CodeUri: ../../deploy/artifacts/order/
+      Handler: dist/lambda.publishOutbox
+      Environment:
+        Variables:
+          DATABASE_URL: !Sub '{{resolve:secretsmanager:${OrderDatabaseSecretName}:SecretString:DATABASE_URL}}'
+          EVENTS_TOPIC_ARN: !Ref EventsTopic
+      Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt EventsTopic.TopicName }
+      Events:
+        Schedule:
+          Type: ScheduleV2
+          Properties: { ScheduleExpression: rate(1 minute) }
+
+  PaymentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub pps-payment-${Environment}
+      CodeUri: ../../deploy/artifacts/payment/
+      Handler: dist/lambda.handler
+      Environment:
+        Variables:
+          DATABASE_URL: !Sub '{{resolve:secretsmanager:${PaymentDatabaseSecretName}:SecretString:DATABASE_URL}}'
+          STRIPE_SECRET_KEY: !Sub '{{resolve:secretsmanager:${StripeSecretName}:SecretString:STRIPE_SECRET_KEY}}'
+          STRIPE_WEBHOOK_SECRET: !Sub '{{resolve:secretsmanager:${StripeSecretName}:SecretString:STRIPE_WEBHOOK_SECRET}}'
+          EVENTS_TOPIC_ARN: !Ref EventsTopic
+          CORS_ORIGIN: '*'
+      Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt EventsTopic.TopicName }
+
+  PaymentEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub pps-payment-events-${Environment}
+      CodeUri: ../../deploy/artifacts/payment/
+      Handler: dist/lambda.events
+      Environment:
+        Variables:
+          DATABASE_URL: !Sub '{{resolve:secretsmanager:${PaymentDatabaseSecretName}:SecretString:DATABASE_URL}}'
+          STRIPE_SECRET_KEY: !Sub '{{resolve:secretsmanager:${StripeSecretName}:SecretString:STRIPE_SECRET_KEY}}'
+          STRIPE_WEBHOOK_SECRET: !Sub '{{resolve:secretsmanager:${StripeSecretName}:SecretString:STRIPE_WEBHOOK_SECRET}}'
+          EVENTS_TOPIC_ARN: !Ref EventsTopic
+      Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt EventsTopic.TopicName }
+      Events:
+        CheckoutEvents:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt PaymentEventsQueue.Arn
+            BatchSize: 10
+            FunctionResponseTypes: [ReportBatchItemFailures]
+
+  PaymentOutboxFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub pps-payment-outbox-${Environment}
+      CodeUri: ../../deploy/artifacts/payment/
+      Handler: dist/lambda.publishOutbox
+      Environment:
+        Variables:
+          DATABASE_URL: !Sub '{{resolve:secretsmanager:${PaymentDatabaseSecretName}:SecretString:DATABASE_URL}}'
+          STRIPE_SECRET_KEY: !Sub '{{resolve:secretsmanager:${StripeSecretName}:SecretString:STRIPE_SECRET_KEY}}'
+          STRIPE_WEBHOOK_SECRET: !Sub '{{resolve:secretsmanager:${StripeSecretName}:SecretString:STRIPE_WEBHOOK_SECRET}}'
+          EVENTS_TOPIC_ARN: !Ref EventsTopic
+      Policies:
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt EventsTopic.TopicName }
+      Events:
+        Schedule:
+          Type: ScheduleV2
+          Properties: { ScheduleExpression: rate(1 minute) }
+
+  ApiServerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: PPS HTTP API is returning server errors
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions: [{ Name: ApiId, Value: !Ref PpsHttpApi }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+  OrderDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { Namespace: AWS/SQS, MetricName: ApproximateNumberOfMessagesVisible, Dimensions: [{ Name: QueueName, Value: !GetAtt OrderEventsDlq.QueueName }], Statistic: Maximum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+  PaymentDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { Namespace: AWS/SQS, MetricName: ApproximateNumberOfMessagesVisible, Dimensions: [{ Name: QueueName, Value: !GetAtt PaymentEventsDlq.QueueName }], Statistic: Maximum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+  InventoryDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { Namespace: AWS/SQS, MetricName: ApproximateNumberOfMessagesVisible, Dimensions: [{ Name: QueueName, Value: !GetAtt InventoryEventsDlq.QueueName }], Statistic: Maximum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+  NotificationDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { Namespace: AWS/SQS, MetricName: ApproximateNumberOfMessagesVisible, Dimensions: [{ Name: QueueName, Value: !GetAtt NotificationEventsDlq.QueueName }], Statistic: Maximum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+  OrderOutboxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [{ Name: FunctionName, Value: !Ref OrderOutboxFunction }], Statistic: Sum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+  PaymentOutboxErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties: { Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [{ Name: FunctionName, Value: !Ref PaymentOutboxFunction }], Statistic: Sum, Period: 300, EvaluationPeriods: 1, Threshold: 1, ComparisonOperator: GreaterThanOrEqualToThreshold, TreatMissingData: notBreaching }
+
 Outputs:
   ApiUrl: { Value: !Sub 'https://${PpsHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}' }
+  CartFunctionArn: { Value: !GetAtt CartFunction.Arn }
+  OrderFunctionArn: { Value: !GetAtt OrderFunction.Arn }
+  PaymentFunctionArn: { Value: !GetAtt PaymentFunction.Arn }
   EventsTopicArn: { Value: !Ref EventsTopic }
   PaymentEventsQueueArn: { Value: !GetAtt PaymentEventsQueue.Arn }
   OrderEventsQueueArn: { Value: !GetAtt OrderEventsQueue.Arn }

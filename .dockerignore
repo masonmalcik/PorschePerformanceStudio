@@ -1,0 +1,11 @@
+.git
+.github
+**/.aws-sam
+**/node_modules
+**/dist
+!packages/messaging/dist
+!packages/messaging/dist/**
+deploy/artifacts
+**/.env
+**/target
+**/*.log
