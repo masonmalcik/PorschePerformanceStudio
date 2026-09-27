@@ -8,12 +8,25 @@ export const eventSchemas = {
     orderId: z.string().uuid(), userId: z.string().min(1).max(128), totalAmount: money,
     items: z.array(orderItem).min(1),
   }).strict(),
+  "payment.requested": z.object({
+    orderId: z.string().uuid(), userId: z.string().min(1).max(128), totalAmount: money,
+    currency: z.string().length(3).transform((value) => value.toLowerCase()),
+  }).strict(),
   "payment.succeeded": z.object({
     paymentIntentId: z.string().min(1).max(255), orderId: z.string().uuid(), amount: z.number().int().positive(),
   }).strict(),
   "payment.failed": z.object({
     paymentIntentId: z.string().min(1).max(255), orderId: z.string().uuid(), amount: z.number().int().positive(),
     reason: z.string().max(1000).optional(),
+  }).strict(),
+  "inventory.reserved": z.object({
+    orderId: z.string().uuid(), reservationId: z.string().min(1).max(255),
+  }).strict(),
+  "inventory.rejected": z.object({
+    orderId: z.string().uuid(), reason: z.string().min(1).max(1000),
+  }).strict(),
+  "inventory.released": z.object({
+    orderId: z.string().uuid(), reservationId: z.string().min(1).max(255),
   }).strict(),
 } as const;
 

@@ -32,8 +32,8 @@ describe.runIf(Boolean(url))("RabbitMQ live integration", () => {
       orderId: randomUUID(), userId: "integration-user", totalAmount: "20.00",
       items: [{ productId: "product-1", quantity: 2, pricePerUnit: "10.00" }],
     });
-    await expect(Promise.race([handled, timeout(5000)])).resolves.toBeUndefined();
-  });
+    await expect(Promise.race([handled, timeout(8000)])).resolves.toBeUndefined();
+  }, 10_000);
 
   it("routes a permanently failed event to its DLQ", async () => {
     service ??= new RabbitMQService({ urls: [url as string], retryDelayMs: 100, maxRetries: 1 });

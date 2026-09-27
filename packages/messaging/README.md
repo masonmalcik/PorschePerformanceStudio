@@ -1,6 +1,13 @@
-# PPS RabbitMQ Messaging
+# PPS Messaging
 
-Shared, strongly typed RabbitMQ transport for checkout choreography. It uses `amqp-connection-manager` for reconnects and `amqplib` confirm channels.
+Shared, strongly typed checkout-event contracts with two transport adapters:
+
+- `RabbitMQService` uses `amqp-connection-manager` and confirm channels for local Docker development.
+- `AwsMessagingService` publishes through SNS, while `createSqsBatchHandler` provides partial-batch failure handling for Lambda consumers.
+
+Use `MESSAGE_TRANSPORT=rabbitmq` locally and `MESSAGE_TRANSPORT=aws` in deployed functions. Event names and payloads remain identical across transports.
+
+The target saga sequence is `order.created` -> inventory decision -> `payment.requested` -> payment result. Inventory and Notification each receive filtered copies through their own queues, so one unavailable consumer cannot block another.
 
 ## Topology
 
@@ -9,7 +16,7 @@ Shared, strongly typed RabbitMQ transport for checkout choreography. It uses `am
 | `ecom.events.topic` | Durable topic exchange for domain events |
 | `ecom.retry.exchange` | Durable direct exchange feeding bounded-delay retry queues |
 | `ecom.deadletter.exchange` | Durable topic exchange for terminal failures |
-| `ecom.payment.order-created` | Payment consumer for `order.created` |
+| `ecom.payment.payment-requested` | Payment consumer for `payment.requested` |
 | `ecom.order.payment-succeeded` | Order consumer for `payment.succeeded` |
 | `ecom.order.payment-failed` | Order consumer for `payment.failed` |
 | `<queue>.retry` | Durable TTL queue that dead-letters back to the event exchange |

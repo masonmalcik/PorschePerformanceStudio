@@ -5,8 +5,15 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "engines": { "node": ">=22.0.0" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
@@ -14,12 +21,14 @@
     "topology:init": "tsx src/initialize-topology.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.1141.0",
     "amqp-connection-manager": "5.0.0",
     "amqplib": "2.0.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/amqplib": "0.10.8",
+    "@types/aws-lambda": "^8.10.163",
     "@types/node": "26.6.3",
     "tsx": "4.23.15",
     "typescript": "7.0.2",

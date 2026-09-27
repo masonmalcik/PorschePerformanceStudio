@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: PPS unified HTTP API and serverless checkout event topology
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+  CognitoIssuer:
+    Type: String
+    Default: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_M6K1hvDSx
+  CognitoAudience:
+    Type: String
+    Default: 1n58iicfsjglca4bghrvjhon8q
+  CartFunctionArn:
+    Type: String
+    Description: ARN of the deployed Cart HTTP Lambda
+  OrderFunctionArn:
+    Type: String
+    Description: ARN of the deployed Order HTTP Lambda
+  PaymentFunctionArn:
+    Type: String
+    Description: ARN of the deployed Payment HTTP Lambda
+  CatalogApiUrl:
+    Type: String
+    Default: https://lvnqza3dre.execute-api.us-east-1.amazonaws.com
+
+Resources:
+  PpsHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub pps-http-api-${Environment}
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins: [http://localhost:3000, http://localhost:5173]
+        AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
+        AllowHeaders: [Authorization, Content-Type, Idempotency-Key, Stripe-Signature, X-Request-ID]
+        ExposeHeaders: [ETag, X-Request-ID]
+        MaxAge: 3600
+
+  CognitoJwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      Name: pps-cognito-jwt
+      AuthorizerType: JWT
+      IdentitySource: ['$request.header.Authorization']
+      JwtConfiguration:
+        Audience: [!Ref CognitoAudience]
+        Issuer: !Ref CognitoIssuer
+
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+  CartIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Ref CartFunctionArn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 15000
+      RequestParameters:
+        overwrite:header.x-authenticated-user-id: $context.authorizer.jwt.claims.sub
+  OrderIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Ref OrderFunctionArn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 15000
+      RequestParameters:
+        overwrite:header.x-authenticated-user-id: $context.authorizer.jwt.claims.sub
+  PaymentIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Ref PaymentFunctionArn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 15000
+      RequestParameters:
+        overwrite:header.x-authenticated-user-id: $context.authorizer.jwt.claims.sub
+  PaymentWebhookIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Ref PaymentFunctionArn
+      PayloadFormatVersion: '2.0'
+      TimeoutInMillis: 15000
+  CatalogIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      IntegrationUri: !Sub '${CatalogApiUrl}/{proxy}'
+      PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 15000
+  CatalogAdminIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      IntegrationUri: !Sub '${CatalogApiUrl}/admin/{proxy}'
+      PayloadFormatVersion: '1.0'
+      TimeoutInMillis: 15000
+
+  CartRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'ANY /api/v1/cart/{proxy+}', AuthorizationType: JWT, AuthorizerId: !Ref CognitoJwtAuthorizer, Target: !Sub 'integrations/${CartIntegration}' }
+  OrderRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'ANY /api/v1/orders/{proxy+}', AuthorizationType: JWT, AuthorizerId: !Ref CognitoJwtAuthorizer, Target: !Sub 'integrations/${OrderIntegration}' }
+  PaymentRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'ANY /api/v1/payments/{proxy+}', AuthorizationType: JWT, AuthorizerId: !Ref CognitoJwtAuthorizer, Target: !Sub 'integrations/${PaymentIntegration}' }
+  PaymentWebhookRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'POST /api/v1/payments/webhook', AuthorizationType: NONE, Target: !Sub 'integrations/${PaymentWebhookIntegration}' }
+  CatalogProductsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: { ApiId: !Ref PpsHttpApi, RouteKey: 'ANY /api/v1/catalog/{proxy+}', AuthorizationType: NONE, Target: !Sub 'integrations/${CatalogIntegration}' }
+  CatalogAdminRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PpsHttpApi
+      RouteKey: 'ANY /api/v1/catalog/admin/{proxy+}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref CognitoJwtAuthorizer
+      AuthorizationScopes: [pps-api/catalog.admin]
+      Target: !Sub 'integrations/${CatalogAdminIntegration}'
+
+  CartInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref CartFunctionArn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
+  OrderInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref OrderFunctionArn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
+  PaymentInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: { Action: lambda:InvokeFunction, FunctionName: !Ref PaymentFunctionArn, Principal: apigateway.amazonaws.com, SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${PpsHttpApi}/*/*' }
+  EventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub pps-events-${Environment}
+      KmsMasterKeyId: alias/aws/sns
+
+  PaymentEventsDlq:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'pps-payment-events-${Environment}-dlq', MessageRetentionPeriod: 1209600, SqsManagedSseEnabled: true }
+  PaymentEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub pps-payment-events-${Environment}
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt PaymentEventsDlq.Arn, maxReceiveCount: 5 }
+  OrderEventsDlq:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'pps-order-events-${Environment}-dlq', MessageRetentionPeriod: 1209600, SqsManagedSseEnabled: true }
+  OrderEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub pps-order-events-${Environment}
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt OrderEventsDlq.Arn, maxReceiveCount: 5 }
+  InventoryEventsDlq:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'pps-inventory-events-${Environment}-dlq', MessageRetentionPeriod: 1209600, SqsManagedSseEnabled: true }
+  InventoryEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub pps-inventory-events-${Environment}
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt InventoryEventsDlq.Arn, maxReceiveCount: 5 }
+  NotificationEventsDlq:
+    Type: AWS::SQS::Queue
+    Properties: { QueueName: !Sub 'pps-notification-events-${Environment}-dlq', MessageRetentionPeriod: 1209600, SqsManagedSseEnabled: true }
+  NotificationEventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub pps-notification-events-${Environment}
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy: { deadLetterTargetArn: !GetAtt NotificationEventsDlq.Arn, maxReceiveCount: 5 }
+
+  PaymentSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref EventsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt PaymentEventsQueue.Arn
+      RawMessageDelivery: true
+      FilterPolicyScope: MessageAttributes
+      FilterPolicy: { eventType: [payment.requested] }
+  OrderSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref EventsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt OrderEventsQueue.Arn
+      RawMessageDelivery: true
+      FilterPolicyScope: MessageAttributes
+      FilterPolicy: { eventType: [payment.succeeded, payment.failed, inventory.reserved, inventory.rejected, inventory.released] }
+  InventorySubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref EventsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt InventoryEventsQueue.Arn
+      RawMessageDelivery: true
+      FilterPolicyScope: MessageAttributes
+      FilterPolicy: { eventType: [order.created] }
+  NotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref EventsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt NotificationEventsQueue.Arn
+      RawMessageDelivery: true
+      FilterPolicyScope: MessageAttributes
+      FilterPolicy: { eventType: [payment.succeeded, payment.failed, inventory.rejected] }
+
+  EventsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref PaymentEventsQueue, !Ref OrderEventsQueue, !Ref InventoryEventsQueue, !Ref NotificationEventsQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: sns.amazonaws.com }
+            Action: sqs:SendMessage
+            Resource: [!GetAtt PaymentEventsQueue.Arn, !GetAtt OrderEventsQueue.Arn, !GetAtt InventoryEventsQueue.Arn, !GetAtt NotificationEventsQueue.Arn]
+            Condition: { ArnEquals: { aws:SourceArn: !Ref EventsTopic } }
+
+Outputs:
+  ApiUrl: { Value: !Sub 'https://${PpsHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}' }
+  EventsTopicArn: { Value: !Ref EventsTopic }
+  PaymentEventsQueueArn: { Value: !GetAtt PaymentEventsQueue.Arn }
+  OrderEventsQueueArn: { Value: !GetAtt OrderEventsQueue.Arn }
+  InventoryEventsQueueArn: { Value: !GetAtt InventoryEventsQueue.Arn }
+  NotificationEventsQueueArn: { Value: !GetAtt NotificationEventsQueue.Arn }

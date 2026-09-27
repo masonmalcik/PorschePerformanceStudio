@@ -8,9 +8,16 @@ export const RETRY_EXCHANGE = "ecom.retry.exchange";
 export interface SubscriptionDefinition { queueName: string; routingKeys: RoutingKey[] }
 
 export const checkoutTopology: SubscriptionDefinition[] = [
-  { queueName: "ecom.payment.order-created", routingKeys: ["order.created"] },
+  { queueName: "ecom.inventory.order-created", routingKeys: ["order.created"] },
+  { queueName: "ecom.payment.payment-requested", routingKeys: ["payment.requested"] },
+  { queueName: "ecom.order.inventory-reserved", routingKeys: ["inventory.reserved"] },
+  { queueName: "ecom.order.inventory-rejected", routingKeys: ["inventory.rejected"] },
+  { queueName: "ecom.order.inventory-released", routingKeys: ["inventory.released"] },
   { queueName: "ecom.order.payment-succeeded", routingKeys: ["payment.succeeded"] },
   { queueName: "ecom.order.payment-failed", routingKeys: ["payment.failed"] },
+  { queueName: "ecom.notification.payment-succeeded", routingKeys: ["payment.succeeded"] },
+  { queueName: "ecom.notification.payment-failed", routingKeys: ["payment.failed"] },
+  { queueName: "ecom.notification.inventory-rejected", routingKeys: ["inventory.rejected"] },
 ];
 
 export async function assertBaseTopology(channel: ConfirmChannel): Promise<void> {
