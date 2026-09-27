@@ -8,6 +8,7 @@ pub struct Config {
     pub asset_root: PathBuf,
     pub admin_auth_mode: String,
     pub admin_development_token: Option<String>,
+    pub redis_mode: String,
     pub redis_cluster_urls: Vec<String>,
     pub redis_pool_size: u32,
 }
@@ -20,6 +21,7 @@ impl Config {
             asset_root: PathBuf::from(optional("ASSET_ROOT", "assets")),
             admin_auth_mode: optional("ADMIN_AUTH_MODE", "disabled"),
             admin_development_token: std::env::var("ADMIN_DEV_TOKEN").ok(),
+            redis_mode: optional("REDIS_MODE", "cluster").to_lowercase(),
             redis_cluster_urls: std::env::var("REDIS_CLUSTER_URLS")
                 .unwrap_or_default()
                 .split(',')

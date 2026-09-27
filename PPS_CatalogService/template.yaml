@@ -13,6 +13,10 @@ Parameters:
     Type: String
     Default: ''
     Description: Comma-separated redis:// or rediss:// Redis Cluster node URLs; empty disables caching
+  RedisMode:
+    Type: String
+    Default: cluster
+    AllowedValues: [standalone, cluster]
   RedisPoolSize:
     Type: Number
     Default: 16
@@ -39,6 +43,7 @@ Resources:
           MONGODB_URI: !Sub '{{resolve:secretsmanager:${MongoDbSecretArn}:SecretString:MONGODB_URI}}'
           MONGODB_DATABASE: !Ref MongoDbDatabase
           REDIS_CLUSTER_URLS: !Ref RedisClusterUrls
+          REDIS_MODE: !Ref RedisMode
           REDIS_POOL_SIZE: !Ref RedisPoolSize
           ADMIN_AUTH_MODE: disabled
           RUST_LOG: info

@@ -5,7 +5,12 @@ use crate::{
 };
 use async_trait::async_trait;
 use bb8::{ManageConnection, Pool};
-use redis::{cluster::ClusterClient, cluster_async::ClusterConnection, RedisError};
+use redis::{
+    aio::{ConnectionLike, MultiplexedConnection},
+    cluster::ClusterClient,
+    cluster_async::ClusterConnection,
+    RedisError,
+};
 use std::{sync::Arc, time::Duration};
 use tokio::time::timeout;
 use tracing::warn;
@@ -41,27 +46,75 @@ impl ManageConnection for RedisClusterManager {
     }
 }
 
+#[derive(Clone)]
+pub struct RedisStandaloneManager {
+    client: redis::Client,
+}
+
+impl RedisStandaloneManager {
+    pub fn new(url: &str) -> Result<Self, RedisError> {
+        redis::Client::open(url).map(|client| Self { client })
+    }
+}
+
+impl ManageConnection for RedisStandaloneManager {
+    type Connection = MultiplexedConnection;
+    type Error = RedisError;
+
+    async fn connect(&self) -> Result<Self::Connection, Self::Error> {
+        self.client.get_multiplexed_async_connection().await
+    }
+
+    async fn is_valid(&self, connection: &mut Self::Connection) -> Result<(), Self::Error> {
+        redis::cmd("PING").query_async(connection).await
+    }
+
+    fn has_broken(&self, _connection: &mut Self::Connection) -> bool {
+        false
+    }
+}
+
+#[derive(Clone)]
+enum RedisPool {
+    Cluster(Pool<RedisClusterManager>),
+    Standalone(Pool<RedisStandaloneManager>),
+}
+
 /// A bounded bb8 pool of asynchronous Redis Cluster connections.
 #[derive(Clone)]
 pub struct ProductCache {
-    pool: Pool<RedisClusterManager>,
+    pool: RedisPool,
     operation_timeout: Duration,
 }
 
 impl ProductCache {
-    pub fn connect(nodes: Vec<String>, max_connections: u32) -> Result<Self, AppError> {
+    pub fn connect(mode: &str, nodes: Vec<String>, max_connections: u32) -> Result<Self, AppError> {
         if nodes.is_empty() {
             return Err(AppError::Configuration(
                 "REDIS_CLUSTER_URLS must contain at least one node".into(),
             ));
         }
-        let manager = RedisClusterManager::new(nodes).map_err(|error| {
-            AppError::Configuration(format!("invalid Redis configuration: {error}"))
-        })?;
-        let pool = Pool::builder()
-            .max_size(max_connections.max(1))
-            .connection_timeout(Duration::from_secs(2))
-            .build_unchecked(manager);
+        let pool = match mode {
+            "cluster" => {
+                let manager = RedisClusterManager::new(nodes).map_err(invalid_redis_config)?;
+                RedisPool::Cluster(redis_pool(manager, max_connections))
+            }
+            "standalone" => {
+                if nodes.len() != 1 {
+                    return Err(AppError::Configuration(
+                        "standalone Redis mode requires exactly one URL".into(),
+                    ));
+                }
+                let manager =
+                    RedisStandaloneManager::new(&nodes[0]).map_err(invalid_redis_config)?;
+                RedisPool::Standalone(redis_pool(manager, max_connections))
+            }
+            value => {
+                return Err(AppError::Configuration(format!(
+                    "unsupported REDIS_MODE {value:?}; expected standalone or cluster"
+                )))
+            }
+        };
         Ok(Self {
             pool,
             operation_timeout: DEFAULT_CACHE_OPERATION_TIMEOUT,
@@ -75,12 +128,16 @@ impl ProductCache {
     async fn get_cached_product(&self, id: &ProductId) -> Option<Product> {
         let key = Self::product_key(id);
         let operation = async {
-            let mut connection = self.pool.get().await?;
-            let cached: Option<Vec<u8>> = redis::cmd("GET")
-                .arg(&key)
-                .query_async(&mut *connection)
-                .await?;
-            Ok::<_, CacheOperationError>(cached)
+            match &self.pool {
+                RedisPool::Cluster(pool) => {
+                    let mut connection = pool.get().await?;
+                    get_value(&mut *connection, &key).await
+                }
+                RedisPool::Standalone(pool) => {
+                    let mut connection = pool.get().await?;
+                    get_value(&mut *connection, &key).await
+                }
+            }
         };
         let bytes = match timeout(self.operation_timeout, operation).await {
             Ok(Ok(value)) => value,
@@ -113,15 +170,16 @@ impl ProductCache {
             }
         };
         let operation = async {
-            let mut connection = self.pool.get().await?;
-            redis::cmd("SET")
-                .arg(&key)
-                .arg(bytes)
-                .arg("EX")
-                .arg(PRODUCT_CACHE_TTL_SECONDS)
-                .query_async::<()>(&mut *connection)
-                .await?;
-            Ok::<_, CacheOperationError>(())
+            match &self.pool {
+                RedisPool::Cluster(pool) => {
+                    let mut connection = pool.get().await?;
+                    set_value(&mut *connection, &key, &bytes).await
+                }
+                RedisPool::Standalone(pool) => {
+                    let mut connection = pool.get().await?;
+                    set_value(&mut *connection, &key, &bytes).await
+                }
+            }
         };
         match timeout(self.operation_timeout, operation).await {
             Ok(Ok(())) => {}
@@ -137,12 +195,16 @@ impl ProductCache {
     async fn evict_product(&self, id: &ProductId) {
         let key = Self::product_key(id);
         let operation = async {
-            let mut connection = self.pool.get().await?;
-            redis::cmd("DEL")
-                .arg(&key)
-                .query_async::<u64>(&mut *connection)
-                .await?;
-            Ok::<_, CacheOperationError>(())
+            match &self.pool {
+                RedisPool::Cluster(pool) => {
+                    let mut connection = pool.get().await?;
+                    delete_value(&mut *connection, &key).await
+                }
+                RedisPool::Standalone(pool) => {
+                    let mut connection = pool.get().await?;
+                    delete_value(&mut *connection, &key).await
+                }
+            }
         };
         match timeout(self.operation_timeout, operation).await {
             Ok(Ok(())) => {}
@@ -152,6 +214,50 @@ impl ProductCache {
             Err(_) => warn!(cache_key = %key, "Redis product eviction timed out"),
         }
     }
+}
+
+fn redis_pool<M: ManageConnection>(manager: M, max_connections: u32) -> Pool<M> {
+    Pool::builder()
+        .max_size(max_connections.max(1))
+        .connection_timeout(Duration::from_secs(2))
+        .build_unchecked(manager)
+}
+
+fn invalid_redis_config(error: RedisError) -> AppError {
+    AppError::Configuration(format!("invalid Redis configuration: {error}"))
+}
+
+async fn get_value<C: ConnectionLike + Send>(
+    connection: &mut C,
+    key: &str,
+) -> Result<Option<Vec<u8>>, CacheOperationError> {
+    Ok(redis::cmd("GET").arg(key).query_async(connection).await?)
+}
+
+async fn set_value<C: ConnectionLike + Send>(
+    connection: &mut C,
+    key: &str,
+    value: &[u8],
+) -> Result<(), CacheOperationError> {
+    redis::cmd("SET")
+        .arg(key)
+        .arg(value)
+        .arg("EX")
+        .arg(PRODUCT_CACHE_TTL_SECONDS)
+        .query_async::<()>(connection)
+        .await?;
+    Ok(())
+}
+
+async fn delete_value<C: ConnectionLike + Send>(
+    connection: &mut C,
+    key: &str,
+) -> Result<(), CacheOperationError> {
+    redis::cmd("DEL")
+        .arg(key)
+        .query_async::<u64>(connection)
+        .await?;
+    Ok(())
 }
 
 #[async_trait]
@@ -261,7 +367,9 @@ impl ProductRepository for CachedProductRepository {
 
 #[cfg(test)]
 mod tests {
-    use super::{CachedProductRepository, ProductCache, ProductCacheBackend};
+    use super::{
+        CachedProductRepository, ProductCache, ProductCacheBackend, PRODUCT_CACHE_TTL_SECONDS,
+    };
     use crate::{
         application::ProductRepository,
         domain::{CreateProduct, Product, ProductId, ProductPage, ProductQuery, UpdateProduct},
@@ -326,6 +434,34 @@ mod tests {
 
         assert!(result.is_some());
         assert_eq!(cache.evictions.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the local Redis service from compose.yaml"]
+    async fn standalone_redis_round_trip_ttl_and_eviction() {
+        let url = "redis://127.0.0.1:6379";
+        let cache = ProductCache::connect("standalone", vec![url.into()], 2)
+            .expect("standalone cache configuration should be valid");
+        let product = product();
+        cache.put_product(&product).await;
+
+        let cached = cache.get_product(&product.id).await;
+        assert!(cached.is_some());
+
+        let client = redis::Client::open(url).expect("test Redis URL should be valid");
+        let mut connection = client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("local Redis should accept connections");
+        let ttl: i64 = redis::cmd("TTL")
+            .arg(ProductCache::product_key(&product.id))
+            .query_async(&mut connection)
+            .await
+            .expect("TTL should be readable");
+        assert!(ttl > 0 && ttl <= PRODUCT_CACHE_TTL_SECONDS as i64);
+
+        cache.delete_product_cache(&product.id).await;
+        assert!(cache.get_product(&product.id).await.is_none());
     }
 
     struct FakeCache {

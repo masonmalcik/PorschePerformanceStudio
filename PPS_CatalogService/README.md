@@ -49,7 +49,25 @@ Public responses omit persistence metadata and inactive/version fields. Public p
 
 Individual product reads use a Redis Cluster cache-aside decorator around the MongoDB repository. Keys use the cluster-safe `product:{id}` pattern and JSON values expire after one hour. Cache misses read MongoDB and backfill Redis; successful product updates and deactivations evict the corresponding key after the database commit.
 
-Set `REDIS_CLUSTER_URLS` to a comma-separated list of `redis://` or TLS `rediss://` cluster nodes and optionally set `REDIS_POOL_SIZE` (default `16`). The async Redis connections are managed by a bounded `bb8` pool. Pool acquisition and cache commands have a 250 ms bound; connection errors, timeouts, invalid cached JSON, and startup configuration errors are logged and fail open to MongoDB. Leaving `REDIS_CLUSTER_URLS` empty disables the cache.
+Set `REDIS_MODE` to `cluster` and `REDIS_CLUSTER_URLS` to a comma-separated list of `redis://` or TLS `rediss://` cluster nodes for production. For local development, use `REDIS_MODE=standalone` with exactly one URL. `REDIS_POOL_SIZE` defaults to `16`. The async Redis connections are managed by a bounded `bb8` pool. Pool acquisition and cache commands have a 250 ms bound; connection errors, timeouts, invalid cached JSON, and startup configuration errors are logged and fail open to MongoDB. Leaving `REDIS_CLUSTER_URLS` empty disables the cache.
+
+Start the local standalone Redis service and confirm that it is healthy:
+
+```powershell
+docker compose up -d redis
+docker compose ps
+docker compose exec redis redis-cli ping
+```
+
+Use these local settings in `.env`:
+
+```dotenv
+REDIS_MODE=standalone
+REDIS_CLUSTER_URLS=redis://127.0.0.1:6379
+REDIS_POOL_SIZE=8
+```
+
+Stop Redis with `docker compose stop redis`. Cached data is retained in the `redis-data` volume; `docker compose down -v` intentionally removes it.
 
 For AWS ElastiCache, deploy the Lambda in subnets and security groups that can reach the cluster, and use TLS endpoints. Network placement is intentionally infrastructure-specific and is not created by this service template.
 

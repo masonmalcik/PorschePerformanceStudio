@@ -48,7 +48,11 @@ async fn main() -> Result<(), Error> {
         warn!("REDIS_CLUSTER_URLS is not configured; product cache is disabled");
         None
     } else {
-        match ProductCache::connect(config.redis_cluster_urls.clone(), config.redis_pool_size) {
+        match ProductCache::connect(
+            &config.redis_mode,
+            config.redis_cluster_urls.clone(),
+            config.redis_pool_size,
+        ) {
             Ok(cache) => Some(Arc::new(cache) as Arc<_>),
             Err(error) => {
                 warn!(error = %error, "Redis product cache initialization failed; continuing without cache");
