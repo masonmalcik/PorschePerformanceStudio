@@ -125,7 +125,7 @@ impl ProductCache {
         format!("product:{{{}}}", id.0)
     }
 
-    async fn get_cached_product(&self, id: &ProductId) -> Option<Product> {
+    async fn get_cached_product(&self, id: &ProductId) -> Result<Option<Product>, CacheError> {
         let key = Self::product_key(id);
         let operation = async {
             match &self.pool {
@@ -139,36 +139,26 @@ impl ProductCache {
                 }
             }
         };
-        let bytes = match timeout(self.operation_timeout, operation).await {
-            Ok(Ok(value)) => value,
-            Ok(Err(error)) => {
-                warn!(cache_key = %key, error = %error, "Redis product read failed; using database");
-                return None;
-            }
-            Err(_) => {
-                warn!(cache_key = %key, "Redis product read timed out; using database");
-                return None;
-            }
-        }?;
+        let bytes = timeout(self.operation_timeout, operation)
+            .await
+            .map_err(|_| CacheError::Timeout("read"))??;
+        let Some(bytes) = bytes else {
+            return Ok(None);
+        };
         match serde_json::from_slice(&bytes) {
-            Ok(product) => Some(product),
+            Ok(product) => Ok(Some(product)),
             Err(error) => {
-                warn!(cache_key = %key, error = %error, "invalid cached product; using database");
-                ProductCacheBackend::delete_product_cache(self, id).await;
-                None
+                if let Err(eviction_error) = self.evict_product(id).await {
+                    warn!(cache_key = %key, error = %eviction_error, "invalid cached product could not be evicted");
+                }
+                Err(CacheError::Serialization(error))
             }
         }
     }
 
-    async fn put_cached_product(&self, product: &Product) {
+    async fn put_cached_product(&self, product: &Product) -> Result<(), CacheError> {
         let key = Self::product_key(&product.id);
-        let bytes = match serde_json::to_vec(product) {
-            Ok(value) => value,
-            Err(error) => {
-                warn!(cache_key = %key, error = %error, "product cache serialization failed");
-                return;
-            }
-        };
+        let bytes = serde_json::to_vec(product)?;
         let operation = async {
             match &self.pool {
                 RedisPool::Cluster(pool) => {
@@ -181,18 +171,15 @@ impl ProductCache {
                 }
             }
         };
-        match timeout(self.operation_timeout, operation).await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                warn!(cache_key = %key, error = %error, "Redis product backfill failed")
-            }
-            Err(_) => warn!(cache_key = %key, "Redis product backfill timed out"),
-        }
+        timeout(self.operation_timeout, operation)
+            .await
+            .map_err(|_| CacheError::Timeout("backfill"))??;
+        Ok(())
     }
 
     /// Evicts a product after the primary database commit. Eviction failures are
     /// logged and fail open so Redis cannot make successful writes appear failed.
-    async fn evict_product(&self, id: &ProductId) {
+    async fn evict_product(&self, id: &ProductId) -> Result<(), CacheError> {
         let key = Self::product_key(id);
         let operation = async {
             match &self.pool {
@@ -206,13 +193,10 @@ impl ProductCache {
                 }
             }
         };
-        match timeout(self.operation_timeout, operation).await {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                warn!(cache_key = %key, error = %error, "Redis product eviction failed")
-            }
-            Err(_) => warn!(cache_key = %key, "Redis product eviction timed out"),
-        }
+        timeout(self.operation_timeout, operation)
+            .await
+            .map_err(|_| CacheError::Timeout("eviction"))??;
+        Ok(())
     }
 }
 
@@ -230,7 +214,7 @@ fn invalid_redis_config(error: RedisError) -> AppError {
 async fn get_value<C: ConnectionLike + Send>(
     connection: &mut C,
     key: &str,
-) -> Result<Option<Vec<u8>>, CacheOperationError> {
+) -> Result<Option<Vec<u8>>, CacheError> {
     Ok(redis::cmd("GET").arg(key).query_async(connection).await?)
 }
 
@@ -238,7 +222,7 @@ async fn set_value<C: ConnectionLike + Send>(
     connection: &mut C,
     key: &str,
     value: &[u8],
-) -> Result<(), CacheOperationError> {
+) -> Result<(), CacheError> {
     redis::cmd("SET")
         .arg(key)
         .arg(value)
@@ -252,7 +236,7 @@ async fn set_value<C: ConnectionLike + Send>(
 async fn delete_value<C: ConnectionLike + Send>(
     connection: &mut C,
     key: &str,
-) -> Result<(), CacheOperationError> {
+) -> Result<(), CacheError> {
     redis::cmd("DEL")
         .arg(key)
         .query_async::<u64>(connection)
@@ -262,32 +246,36 @@ async fn delete_value<C: ConnectionLike + Send>(
 
 #[async_trait]
 pub trait ProductCacheBackend: Send + Sync {
-    async fn get_product(&self, id: &ProductId) -> Option<Product>;
-    async fn put_product(&self, product: &Product);
-    async fn delete_product_cache(&self, id: &ProductId);
+    async fn get_product(&self, id: &ProductId) -> Result<Option<Product>, CacheError>;
+    async fn put_product(&self, product: &Product) -> Result<(), CacheError>;
+    async fn delete_product_cache(&self, id: &ProductId) -> Result<(), CacheError>;
 }
 
 #[async_trait]
 impl ProductCacheBackend for ProductCache {
-    async fn get_product(&self, id: &ProductId) -> Option<Product> {
+    async fn get_product(&self, id: &ProductId) -> Result<Option<Product>, CacheError> {
         self.get_cached_product(id).await
     }
 
-    async fn put_product(&self, product: &Product) {
-        self.put_cached_product(product).await;
+    async fn put_product(&self, product: &Product) -> Result<(), CacheError> {
+        self.put_cached_product(product).await
     }
 
-    async fn delete_product_cache(&self, id: &ProductId) {
-        self.evict_product(id).await;
+    async fn delete_product_cache(&self, id: &ProductId) -> Result<(), CacheError> {
+        self.evict_product(id).await
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-enum CacheOperationError {
+pub enum CacheError {
     #[error("pool error: {0}")]
     Pool(#[from] bb8::RunError<RedisError>),
     #[error("Redis error: {0}")]
     Redis(#[from] RedisError),
+    #[error("cache serialization failed: {0}")]
+    Serialization(#[from] serde_json::Error),
+    #[error("Redis cache {0} timed out")]
+    Timeout(&'static str),
 }
 
 /// Cache-aside decorator for the primary product repository.
@@ -308,21 +296,28 @@ impl CachedProductRepository {
     /// Redis with a one-hour TTL on a miss or recoverable cache failure.
     pub async fn get_product(&self, id: ProductId) -> Result<Option<Product>, AppError> {
         if let Some(cache) = &self.cache {
-            if let Some(product) = cache.get_product(&id).await {
-                return Ok(Some(product));
+            match cache.get_product(&id).await {
+                Ok(Some(product)) => return Ok(Some(product)),
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(product_id = %id.0, error = %error, "Redis product read failed; using database");
+                }
             }
         }
         let product = self.primary.get(id).await?;
         if let (Some(cache), Some(product)) = (&self.cache, product.as_ref()) {
-            cache.put_product(product).await;
+            if let Err(error) = cache.put_product(product).await {
+                warn!(product_id = %product.id.0, error = %error, "Redis product backfill failed; returning database result");
+            }
         }
         Ok(product)
     }
 
-    pub async fn delete_product_cache(&self, id: &ProductId) {
+    pub async fn delete_product_cache(&self, id: &ProductId) -> Result<(), CacheError> {
         if let Some(cache) = &self.cache {
-            cache.delete_product_cache(id).await;
+            cache.delete_product_cache(id).await?;
         }
+        Ok(())
     }
 }
 
@@ -351,7 +346,9 @@ impl ProductRepository for CachedProductRepository {
     ) -> Result<Option<Product>, AppError> {
         let product = self.primary.update(id.clone(), input).await?;
         if product.is_some() {
-            self.delete_product_cache(&id).await;
+            if let Err(error) = self.delete_product_cache(&id).await {
+                warn!(product_id = %id.0, error = %error, "Redis product eviction failed after update");
+            }
         }
         Ok(product)
     }
@@ -359,7 +356,9 @@ impl ProductRepository for CachedProductRepository {
     async fn deactivate(&self, id: ProductId) -> Result<bool, AppError> {
         let deactivated = self.primary.deactivate(id.clone()).await?;
         if deactivated {
-            self.delete_product_cache(&id).await;
+            if let Err(error) = self.delete_product_cache(&id).await {
+                warn!(product_id = %id.0, error = %error, "Redis product eviction failed after deactivation");
+            }
         }
         Ok(deactivated)
     }
@@ -368,7 +367,8 @@ impl ProductRepository for CachedProductRepository {
 #[cfg(test)]
 mod tests {
     use super::{
-        CachedProductRepository, ProductCache, ProductCacheBackend, PRODUCT_CACHE_TTL_SECONDS,
+        CacheError, CachedProductRepository, ProductCache, ProductCacheBackend,
+        PRODUCT_CACHE_TTL_SECONDS,
     };
     use crate::{
         application::ProductRepository,
@@ -437,15 +437,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cache_failure_fails_open_to_primary_database() {
+        let primary = Arc::new(FakeRepository::new(product()));
+        let cache = Arc::new(ErrorCache);
+        let repository = CachedProductRepository::new(primary.clone(), Some(cache));
+
+        let result = repository
+            .get_product(ProductId("product-1".into()))
+            .await
+            .expect("database fallback should succeed");
+
+        assert!(result.is_some());
+        assert_eq!(primary.gets.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
     #[ignore = "requires the local Redis service from compose.yaml"]
     async fn standalone_redis_round_trip_ttl_and_eviction() {
         let url = "redis://127.0.0.1:6379";
         let cache = ProductCache::connect("standalone", vec![url.into()], 2)
             .expect("standalone cache configuration should be valid");
         let product = product();
-        cache.put_product(&product).await;
+        cache
+            .put_product(&product)
+            .await
+            .expect("product should be cached");
 
-        let cached = cache.get_product(&product.id).await;
+        let cached = cache
+            .get_product(&product.id)
+            .await
+            .expect("cached product should be readable");
         assert!(cached.is_some());
 
         let client = redis::Client::open(url).expect("test Redis URL should be valid");
@@ -460,8 +481,15 @@ mod tests {
             .expect("TTL should be readable");
         assert!(ttl > 0 && ttl <= PRODUCT_CACHE_TTL_SECONDS as i64);
 
-        cache.delete_product_cache(&product.id).await;
-        assert!(cache.get_product(&product.id).await.is_none());
+        cache
+            .delete_product_cache(&product.id)
+            .await
+            .expect("cached product should be evicted");
+        assert!(cache
+            .get_product(&product.id)
+            .await
+            .expect("cache should remain available")
+            .is_none());
     }
 
     struct FakeCache {
@@ -490,16 +518,35 @@ mod tests {
 
     #[async_trait]
     impl ProductCacheBackend for FakeCache {
-        async fn get_product(&self, _id: &ProductId) -> Option<Product> {
-            self.hit.clone()
+        async fn get_product(&self, _id: &ProductId) -> Result<Option<Product>, CacheError> {
+            Ok(self.hit.clone())
         }
 
-        async fn put_product(&self, _product: &Product) {
+        async fn put_product(&self, _product: &Product) -> Result<(), CacheError> {
             self.puts.fetch_add(1, Ordering::Relaxed);
+            Ok(())
         }
 
-        async fn delete_product_cache(&self, _id: &ProductId) {
+        async fn delete_product_cache(&self, _id: &ProductId) -> Result<(), CacheError> {
             self.evictions.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    struct ErrorCache;
+
+    #[async_trait]
+    impl ProductCacheBackend for ErrorCache {
+        async fn get_product(&self, _id: &ProductId) -> Result<Option<Product>, CacheError> {
+            Err(CacheError::Timeout("test read"))
+        }
+
+        async fn put_product(&self, _product: &Product) -> Result<(), CacheError> {
+            Err(CacheError::Timeout("test backfill"))
+        }
+
+        async fn delete_product_cache(&self, _id: &ProductId) -> Result<(), CacheError> {
+            Err(CacheError::Timeout("test eviction"))
         }
     }
 
