@@ -10,6 +10,7 @@ use pps_catalog_service::{
     },
     data::{
         assets::FileSystemImageStore,
+        cache::{CachedProductRepository, ProductCache},
         mongodb::{
             connection::connect,
             repositories::{
@@ -26,6 +27,7 @@ use pps_catalog_service::{
     Config,
 };
 use std::sync::Arc;
+use tracing::warn;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -40,7 +42,24 @@ async fn main() -> Result<(), Error> {
 
     let config = Config::from_env()?;
     let database = connect(&config).await?;
-    let products = Arc::new(MongoProductRepository::new(database.clone()));
+    let primary_products: Arc<dyn pps_catalog_service::application::ProductRepository> =
+        Arc::new(MongoProductRepository::new(database.clone()));
+    let product_cache = if config.redis_cluster_urls.is_empty() {
+        warn!("REDIS_CLUSTER_URLS is not configured; product cache is disabled");
+        None
+    } else {
+        match ProductCache::connect(config.redis_cluster_urls.clone(), config.redis_pool_size) {
+            Ok(cache) => Some(Arc::new(cache) as Arc<_>),
+            Err(error) => {
+                warn!(error = %error, "Redis product cache initialization failed; continuing without cache");
+                None
+            }
+        }
+    };
+    let products = Arc::new(CachedProductRepository::new(
+        primary_products,
+        product_cache,
+    ));
     let brands = Arc::new(MongoBrandRepository::new(database.clone()));
     let categories = Arc::new(MongoCategoryRepository::new(database.clone()));
     let vehicle_models = Arc::new(MongoVehicleModelRepository::new(database.clone()));

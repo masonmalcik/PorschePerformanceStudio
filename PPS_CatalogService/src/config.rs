@@ -8,6 +8,8 @@ pub struct Config {
     pub asset_root: PathBuf,
     pub admin_auth_mode: String,
     pub admin_development_token: Option<String>,
+    pub redis_cluster_urls: Vec<String>,
+    pub redis_pool_size: u32,
 }
 
 impl Config {
@@ -18,6 +20,14 @@ impl Config {
             asset_root: PathBuf::from(optional("ASSET_ROOT", "assets")),
             admin_auth_mode: optional("ADMIN_AUTH_MODE", "disabled"),
             admin_development_token: std::env::var("ADMIN_DEV_TOKEN").ok(),
+            redis_cluster_urls: std::env::var("REDIS_CLUSTER_URLS")
+                .unwrap_or_default()
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .collect(),
+            redis_pool_size: positive_u32("REDIS_POOL_SIZE", 16)?,
         })
     }
 }
@@ -31,4 +41,19 @@ fn required(name: &'static str) -> Result<String, AppError> {
 
 fn optional(name: &'static str, default: &'static str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.to_owned())
+}
+
+fn positive_u32(name: &'static str, default: u32) -> Result<u32, AppError> {
+    let value = std::env::var(name)
+        .ok()
+        .map(|raw| raw.parse::<u32>())
+        .transpose()
+        .map_err(|_| AppError::Configuration(format!("{name} must be a positive integer")))?
+        .unwrap_or(default);
+    if value == 0 {
+        return Err(AppError::Configuration(format!(
+            "{name} must be a positive integer"
+        )));
+    }
+    Ok(value)
 }

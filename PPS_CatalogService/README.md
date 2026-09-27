@@ -45,6 +45,14 @@ Dependencies flow inward: `presentation -> application -> domain`. The `data` ti
 
 Public responses omit persistence metadata and inactive/version fields. Public product reads emit `ETag` plus `Cache-Control: public, max-age=60, s-maxage=300`, and honor `If-None-Match` with `304 Not Modified`.
 
+## Product cache
+
+Individual product reads use a Redis Cluster cache-aside decorator around the MongoDB repository. Keys use the cluster-safe `product:{id}` pattern and JSON values expire after one hour. Cache misses read MongoDB and backfill Redis; successful product updates and deactivations evict the corresponding key after the database commit.
+
+Set `REDIS_CLUSTER_URLS` to a comma-separated list of `redis://` or TLS `rediss://` cluster nodes and optionally set `REDIS_POOL_SIZE` (default `16`). The async Redis connections are managed by a bounded `bb8` pool. Pool acquisition and cache commands have a 250 ms bound; connection errors, timeouts, invalid cached JSON, and startup configuration errors are logged and fail open to MongoDB. Leaving `REDIS_CLUSTER_URLS` empty disables the cache.
+
+For AWS ElastiCache, deploy the Lambda in subnets and security groups that can reach the cluster, and use TLS endpoints. Network placement is intentionally infrastructure-specific and is not created by this service template.
+
 `GET /products` accepts `pageSize` (1-100), `cursor`, `brandId`, `categoryId`, `saleType`, `minPrice`, `maxPrice`, `q`, `sort` (`name`, `newest`, or `price`), and `direction` (`asc` or `desc`). Unknown or duplicate parameters are rejected.
 
 For local development only, set `ADMIN_AUTH_MODE=development`, choose an `ADMIN_DEV_TOKEN` of at least 24 characters, and send it as `x-pps-admin-key` on administrative requests. The default `disabled` mode denies every administrative request. The authorization port is ready for a future Cognito adapter.
