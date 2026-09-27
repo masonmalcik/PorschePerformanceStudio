@@ -11,6 +11,8 @@ pub struct Config {
     pub redis_mode: String,
     pub redis_cluster_urls: Vec<String>,
     pub redis_pool_size: u32,
+    pub elasticsearch_url: Option<String>,
+    pub elasticsearch_timeout_ms: u64,
 }
 
 impl Config {
@@ -30,6 +32,10 @@ impl Config {
                 .map(str::to_owned)
                 .collect(),
             redis_pool_size: positive_u32("REDIS_POOL_SIZE", 16)?,
+            elasticsearch_url: std::env::var("ELASTICSEARCH_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty()),
+            elasticsearch_timeout_ms: u64::from(positive_u32("ELASTICSEARCH_TIMEOUT_MS", 500)?),
         })
     }
 }

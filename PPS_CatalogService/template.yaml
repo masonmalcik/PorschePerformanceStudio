@@ -22,6 +22,15 @@ Parameters:
     Default: 16
     MinValue: 1
     MaxValue: 100
+  ElasticsearchUrl:
+    Type: String
+    Default: ''
+    Description: Elasticsearch HTTPS endpoint; empty keeps MongoDB text search active
+  ElasticsearchTimeoutMs:
+    Type: Number
+    Default: 500
+    MinValue: 50
+    MaxValue: 5000
 
 Resources:
   CatalogFunction:
@@ -45,6 +54,8 @@ Resources:
           REDIS_CLUSTER_URLS: !Ref RedisClusterUrls
           REDIS_MODE: !Ref RedisMode
           REDIS_POOL_SIZE: !Ref RedisPoolSize
+          ELASTICSEARCH_URL: !Ref ElasticsearchUrl
+          ELASTICSEARCH_TIMEOUT_MS: !Ref ElasticsearchTimeoutMs
           ADMIN_AUTH_MODE: disabled
           RUST_LOG: info
       Events:

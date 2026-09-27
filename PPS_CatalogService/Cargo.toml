@@ -24,9 +24,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 url = "2"
 bb8 = "0.9"
 redis = { version = "0.32", features = ["tokio-comp", "cluster-async"] }
+elasticsearch = { version = "9.1.0-alpha.1", default-features = false, features = ["rustls-tls"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+wiremock = "0.6"
 
 [[bin]]
 name = "api"

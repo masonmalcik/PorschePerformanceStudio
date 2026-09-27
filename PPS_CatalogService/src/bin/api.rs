@@ -21,6 +21,7 @@ use pps_catalog_service::{
             },
         },
         observability::TracingMetrics,
+        search::{ElasticsearchProductSearch, SearchableProductRepository},
         security::{DevelopmentAuthorizer, DisabledAuthorizer},
     },
     presentation::{handle_request, AdminApplications, AppState},
@@ -42,8 +43,23 @@ async fn main() -> Result<(), Error> {
 
     let config = Config::from_env()?;
     let database = connect(&config).await?;
-    let primary_products: Arc<dyn pps_catalog_service::application::ProductRepository> =
+    let mongo_products: Arc<dyn pps_catalog_service::application::ProductRepository> =
         Arc::new(MongoProductRepository::new(database.clone()));
+    let product_search = config.elasticsearch_url.as_deref().and_then(|endpoint| {
+        match ElasticsearchProductSearch::new(
+            endpoint,
+            std::time::Duration::from_millis(config.elasticsearch_timeout_ms),
+        ) {
+            Ok(search) => Some(Arc::new(search)),
+            Err(error) => {
+                warn!(error = %error, "Elasticsearch initialization failed; database text search remains active");
+                None
+            }
+        }
+    });
+    let primary_products: Arc<dyn pps_catalog_service::application::ProductRepository> = Arc::new(
+        SearchableProductRepository::new(mongo_products, product_search),
+    );
     let product_cache = if config.redis_cluster_urls.is_empty() {
         warn!("REDIS_CLUSTER_URLS is not configured; product cache is disabled");
         None

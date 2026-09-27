@@ -84,6 +84,7 @@ impl ProductRepository for MongoProductRepository {
                     doc! { "name": { "$regex": &pattern, "$options": "i" } },
                     doc! { "sku": { "$regex": &pattern, "$options": "i" } },
                     doc! { "modelNumber": { "$regex": &pattern, "$options": "i" } },
+                    doc! { "description": { "$regex": &pattern, "$options": "i" } },
                 ],
             );
         }

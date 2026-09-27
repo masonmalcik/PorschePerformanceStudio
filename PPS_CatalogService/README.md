@@ -71,6 +71,17 @@ Stop Redis with `docker compose stop redis`. Cached data is retained in the `red
 
 For AWS ElastiCache, deploy the Lambda in subnets and security groups that can reach the cluster, and use TLS endpoints. Network placement is intentionally infrastructure-specific and is not created by this service template.
 
+## Product search
+
+Set `ELASTICSEARCH_URL` to enable the official async Elasticsearch client. Text searches use a fuzzy `multi_match` query across `name` (boosted) and `description`, with an exact category filter when `categoryId` is supplied. Product creates and updates best-effort upsert the complete serialized product into the `products` index; deactivation removes it.
+
+```dotenv
+ELASTICSEARCH_URL=https://your-elasticsearch-endpoint:9200
+ELASTICSEARCH_TIMEOUT_MS=500
+```
+
+Elasticsearch is an optional read optimization. Transport timeouts, unavailable nodes, non-success HTTP responses, and invalid response payloads emit structured warning logs and fall back to MongoDB's case-insensitive name, SKU, model-number, and description search. Database writes remain successful when secondary indexing is unavailable. Leaving `ELASTICSEARCH_URL` empty keeps MongoDB search active.
+
 `GET /products` accepts `pageSize` (1-100), `cursor`, `brandId`, `categoryId`, `saleType`, `minPrice`, `maxPrice`, `q`, `sort` (`name`, `newest`, or `price`), and `direction` (`asc` or `desc`). Unknown or duplicate parameters are rejected.
 
 For local development only, set `ADMIN_AUTH_MODE=development`, choose an `ADMIN_DEV_TOKEN` of at least 24 characters, and send it as `x-pps-admin-key` on administrative requests. The default `disabled` mode denies every administrative request. The authorization port is ready for a future Cognito adapter.
