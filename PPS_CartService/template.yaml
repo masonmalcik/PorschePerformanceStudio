@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: PPS Cart Service DynamoDB table using bounded Free Tier provisioned capacity
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedPattern: "[a-z0-9-]+"
+
+Resources:
+  CartsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub pps-carts-${Environment}
+      BillingMode: PROVISIONED
+      TableClass: STANDARD
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      Tags:
+        - Key: Application
+          Value: PPS
+        - Key: Service
+          Value: Cart
+
+Outputs:
+  CartsTableName:
+    Value: !Ref CartsTable

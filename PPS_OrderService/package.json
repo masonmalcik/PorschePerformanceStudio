@@ -1,0 +1,43 @@
+{
+  "name": "@pps/order-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.0.0" },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:integration": "vitest run tests/integration",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate:create": "prisma migrate dev --create-only",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "prisma:generate": "npm run db:generate",
+    "prisma:migrate:dev": "npm run db:migrate:dev",
+    "prisma:migrate:deploy": "npm run db:migrate:deploy"
+  },
+  "dependencies": {
+    "@prisma/client": "6.12.0",
+    "cors": "2.8.6",
+    "express": "5.2.1",
+    "helmet": "8.3.0",
+    "pino": "10.3.1",
+    "pino-http": "11.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "26.6.3",
+    "@types/supertest": "7.2.1",
+    "prisma": "6.12.0",
+    "supertest": "7.3.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}

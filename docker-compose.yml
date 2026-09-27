@@ -1,0 +1,116 @@
+name: pps-local
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    hostname: pps-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: pps
+      RABBITMQ_DEFAULT_PASS: pps-local-only
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  memcached:
+    image: memcached:1.6-alpine
+    command: ["memcached", "-m", "64", "-I", "2m", "-c", "1024"]
+    ports:
+      - "127.0.0.1:11211:11211"
+    healthcheck:
+      test: ["CMD-SHELL", "echo stats | nc 127.0.0.1 11211 | grep -q STAT"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  cart-service:
+    build:
+      context: ./PPS_CartService
+    environment:
+      NODE_ENV: development
+      PORT: 3004
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      AWS_SDK_LOAD_CONFIG: "1"
+      DYNAMODB_CART_TABLE: pps-carts-dev
+      MEMCACHED_SERVERS: memcached:11211
+      TRUSTED_USER_HEADER: x-authenticated-user-id
+      CORS_ORIGIN: http://localhost:3000
+      LOG_LEVEL: info
+    volumes:
+      - "${USERPROFILE}/.aws:/home/node/.aws:ro"
+    ports:
+      - "127.0.0.1:3004:3004"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      memcached:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  order-service:
+    build:
+      context: ./PPS_OrderService
+    env_file:
+      - ./PPS_OrderService/.env
+    environment:
+      NODE_ENV: development
+      PORT: 3005
+      RABBITMQ_URL: amqp://pps:pps-local-only@rabbitmq:5672
+    ports:
+      - "127.0.0.1:3005:3005"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      memcached:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: ./PPS_PaymentService
+    env_file:
+      - ./PPS_PaymentService/.env
+    environment:
+      NODE_ENV: development
+      PORT: 3006
+      RABBITMQ_URL: amqp://pps:pps-local-only@rabbitmq:5672
+    ports:
+      - "127.0.0.1:3006:3006"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      memcached:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3006/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:
