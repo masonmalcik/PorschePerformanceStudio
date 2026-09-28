@@ -103,6 +103,14 @@ Resources:
         IdToken: minutes
         RefreshToken: days
 
+  ManagedLoginBranding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    DependsOn: UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref WebClient
+      UseCognitoProvidedValues: true
+
   AuthTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
