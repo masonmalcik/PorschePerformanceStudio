@@ -6,9 +6,10 @@ use crate::{
         VehicleModelApplication,
     },
     domain::{
-        CreateBrand, CreateCategory, CreateEngine, CreateGeneration, CreateProduct,
-        CreateProductFitment, CreateTrim, CreateVehicleConfiguration, CreateVehicleModel,
-        ProductId, UpdateProduct,
+        BrandId, CategoryId, CreateBrand, CreateCategory, CreateEngine, CreateGeneration,
+        CreateProduct, CreateProductFitment, CreateTrim, CreateVehicleConfiguration,
+        CreateVehicleModel, EngineId, GenerationId, ProductFitmentId, ProductId, TrimId,
+        UpdateProduct, VehicleConfigurationId, VehicleModelId,
     },
     presentation::{
         openapi,
@@ -116,7 +117,7 @@ pub async fn handle_request(request: Request, state: AppState) -> Response<Body>
         );
         headers.insert(
             "access-control-allow-headers",
-            "Authorization,Content-Type,If-None-Match,X-Request-ID"
+            "Authorization,Content-Type,If-None-Match,X-PPS-Admin-Key,X-Request-ID"
                 .parse()
                 .expect("valid CORS headers"),
         );
@@ -174,7 +175,7 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
             cached_json_response(&request, 200, &PublicProductPageResponse::from(page))
         }
         (Method::GET, path) if path.starts_with("/products/") => {
-            let id = parse_id(path, "/products/")?;
+            let id = ProductId(parse_id(path, "/products/")?);
             let product = state.products.get(id).await?;
             cached_json_response(&request, 200, &PublicProductResponse::from(product))
         }
@@ -196,9 +197,21 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
                 .collect();
             json_response(200, &values)
         }
+        (Method::GET, path) if path.starts_with("/admin/products/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &PublicProductResponse::from(
+                    state
+                        .products
+                        .get(ProductId(parse_id(path, "/admin/products/")?))
+                        .await?,
+                ),
+            )
+        }
         (Method::PATCH, path) if path.starts_with("/admin/products/") => {
             authorize_admin(&request, &state).await?;
-            let id = parse_id(path, "/admin/products/")?;
+            let id = ProductId(parse_id(path, "/admin/products/")?);
             let command: UpdateProduct = parse_json_body(&request)?;
             let product = state.products.update(id, command).await?;
             state.metrics.increment("catalog_product_updated");
@@ -206,7 +219,7 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
         }
         (Method::DELETE, path) if path.starts_with("/admin/products/") => {
             authorize_admin(&request, &state).await?;
-            let id = parse_id(path, "/admin/products/")?;
+            let id = ProductId(parse_id(path, "/admin/products/")?);
             state.products.deactivate(id).await?;
             state.metrics.increment("catalog_product_deactivated");
             Response::builder()
@@ -233,6 +246,27 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
                 .collect();
             json_response(200, &models)
         }
+        (Method::GET, path) if path.starts_with("/admin/vehicle-models/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .vehicle_models
+                    .get(VehicleModelId(parse_id(path, "/admin/vehicle-models/")?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/vehicle-models/") => {
+            authorize_admin(&request, &state).await?;
+            let value = state
+                .vehicle_models
+                .update(
+                    VehicleModelId(parse_id(path, "/admin/vehicle-models/")?),
+                    parse_json_body(&request)?,
+                )
+                .await?;
+            json_response(200, &value)
+        }
         (Method::POST, "/admin/vehicle-generations") => {
             authorize_admin(&request, &state).await?;
             let command: CreateGeneration = parse_json_body(&request)?;
@@ -252,6 +286,29 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
                 .map(Into::into)
                 .collect();
             json_response(200, &values)
+        }
+        (Method::GET, path) if path.starts_with("/admin/vehicle-generations/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .generations
+                    .get(GenerationId(parse_id(path, "/admin/vehicle-generations/")?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/vehicle-generations/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .generations
+                    .update(
+                        GenerationId(parse_id(path, "/admin/vehicle-generations/")?),
+                        parse_json_body(&request)?,
+                    )
+                    .await?,
+            )
         }
         (Method::GET, "/admin/brands") => {
             authorize_admin(&request, &state).await?;
@@ -273,6 +330,29 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
             state.metrics.increment("catalog_brand_created");
             json_response(201, &BrandCreatedResponse::from(value))
         }
+        (Method::GET, path) if path.starts_with("/admin/brands/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .brands
+                    .get(BrandId(parse_id(path, "/admin/brands/")?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/brands/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .brands
+                    .update(
+                        BrandId(parse_id(path, "/admin/brands/")?),
+                        parse_json_body(&request)?,
+                    )
+                    .await?,
+            )
+        }
         (Method::GET, "/admin/categories") => {
             authorize_admin(&request, &state).await?;
             let values: Vec<NamedOptionResponse> = state
@@ -290,6 +370,29 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
             let category = state.categories.create(command).await?;
             state.metrics.increment("catalog_category_created");
             json_response(201, &CategoryCreatedResponse::from(category))
+        }
+        (Method::GET, path) if path.starts_with("/admin/categories/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .categories
+                    .get(CategoryId(parse_id(path, "/admin/categories/")?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/categories/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .categories
+                    .update(
+                        CategoryId(parse_id(path, "/admin/categories/")?),
+                        parse_json_body(&request)?,
+                    )
+                    .await?,
+            )
         }
         (Method::POST, "/admin/vehicle-trims") => {
             authorize_admin(&request, &state).await?;
@@ -309,6 +412,29 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
                 .collect();
             json_response(200, &values)
         }
+        (Method::GET, path) if path.starts_with("/admin/vehicle-trims/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .trims
+                    .get(TrimId(parse_id(path, "/admin/vehicle-trims/")?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/vehicle-trims/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .trims
+                    .update(
+                        TrimId(parse_id(path, "/admin/vehicle-trims/")?),
+                        parse_json_body(&request)?,
+                    )
+                    .await?,
+            )
+        }
         (Method::POST, "/admin/vehicle-configurations") => {
             authorize_admin(&request, &state).await?;
             let value = state
@@ -320,6 +446,36 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
                 .increment("catalog_vehicle_configuration_created");
             json_response(201, &VehicleConfigurationCreatedResponse::from(value))
         }
+        (Method::GET, "/admin/vehicle-configurations") => {
+            authorize_admin(&request, &state).await?;
+            json_response(200, &state.configurations.list_active().await?)
+        }
+        (Method::GET, path) if path.starts_with("/admin/vehicle-configurations/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .configurations
+                    .get(VehicleConfigurationId(parse_id(
+                        path,
+                        "/admin/vehicle-configurations/",
+                    )?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/vehicle-configurations/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .configurations
+                    .update(
+                        VehicleConfigurationId(parse_id(path, "/admin/vehicle-configurations/")?),
+                        parse_json_body(&request)?,
+                    )
+                    .await?,
+            )
+        }
         (Method::POST, "/admin/engines") => {
             authorize_admin(&request, &state).await?;
             let value = state
@@ -329,6 +485,40 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
             state.metrics.increment("catalog_engine_created");
             json_response(201, &EngineCreatedResponse::from(value))
         }
+        (Method::GET, "/admin/engines") => {
+            authorize_admin(&request, &state).await?;
+            let values: Vec<EngineCreatedResponse> = state
+                .engines
+                .list_active()
+                .await?
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            json_response(200, &values)
+        }
+        (Method::GET, path) if path.starts_with("/admin/engines/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .engines
+                    .get(EngineId(parse_id(path, "/admin/engines/")?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/engines/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .engines
+                    .update(
+                        EngineId(parse_id(path, "/admin/engines/")?),
+                        parse_json_body(&request)?,
+                    )
+                    .await?,
+            )
+        }
         (Method::POST, "/admin/product-fitments") => {
             authorize_admin(&request, &state).await?;
             let value = state
@@ -337,6 +527,36 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
                 .await?;
             state.metrics.increment("catalog_product_fitment_created");
             json_response(201, &ProductFitmentCreatedResponse::from(value))
+        }
+        (Method::GET, "/admin/product-fitments") => {
+            authorize_admin(&request, &state).await?;
+            json_response(200, &state.fitments.list_active().await?)
+        }
+        (Method::GET, path) if path.starts_with("/admin/product-fitments/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .fitments
+                    .get(ProductFitmentId(parse_id(
+                        path,
+                        "/admin/product-fitments/",
+                    )?))
+                    .await?,
+            )
+        }
+        (Method::PATCH, path) if path.starts_with("/admin/product-fitments/") => {
+            authorize_admin(&request, &state).await?;
+            json_response(
+                200,
+                &state
+                    .fitments
+                    .update(
+                        ProductFitmentId(parse_id(path, "/admin/product-fitments/")?),
+                        parse_json_body(&request)?,
+                    )
+                    .await?,
+            )
         }
         _ => Err(AppError::NotFound),
     }
@@ -364,7 +584,7 @@ fn header(request: &Request, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn parse_id(path: &str, prefix: &str) -> Result<ProductId, AppError> {
+fn parse_id(path: &str, prefix: &str) -> Result<String, AppError> {
     let value = path
         .strip_prefix(prefix)
         .filter(|value| !value.is_empty() && !value.contains('/'))
@@ -374,7 +594,7 @@ fn parse_id(path: &str, prefix: &str) -> Result<ProductId, AppError> {
             "id must be a 24-character hexadecimal value".to_owned(),
         ));
     }
-    Ok(ProductId(value.to_owned()))
+    Ok(value.to_owned())
 }
 
 fn parse_json_body<T>(request: &Request) -> Result<T, AppError>

@@ -27,6 +27,7 @@ async fn vehicle_model_repository_maps_duplicate_codes_to_conflict() {
     let command = || CreateVehicleModel {
         name: "911".into(),
         model_code: "911".into(),
+        is_active: None,
     };
     repository.create(command()).await.expect("first insert");
     let duplicate = repository.create(command()).await;

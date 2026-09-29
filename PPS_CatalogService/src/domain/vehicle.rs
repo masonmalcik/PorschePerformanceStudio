@@ -17,6 +17,8 @@ pub struct VehicleModel {
 pub struct CreateVehicleModel {
     pub name: String,
     pub model_code: String,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 impl CreateVehicleModel {
@@ -61,6 +63,8 @@ pub struct CreateGeneration {
     pub name: String,
     pub generation_code: String,
     pub timeframe: Timeframe,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 impl CreateGeneration {
@@ -104,6 +108,8 @@ pub struct CreateTrim {
     pub name: String,
     pub trim_code: String,
     pub timeframe: Timeframe,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 impl CreateTrim {
@@ -235,6 +241,8 @@ pub struct CreateVehicleConfiguration {
     pub engine: Option<EngineConfiguration>,
     pub transmission: Option<TransmissionConfiguration>,
     pub drivetrain: Option<DrivetrainType>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 impl CreateVehicleConfiguration {
     pub fn validate(&self) -> Result<(), String> {

@@ -1,0 +1,19 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import AdminToolLinks from './AdminToolLinks.astro';
+import UpdateAdminEntityForm from './UpdateAdminEntityForm';
+type Entity = 'vehicle-models'|'vehicle-generations'|'vehicle-trims'|'vehicle-configurations'|'engines'|'brands'|'categories'|'products'|'product-fitments';
+interface Props { entity: Entity; title: string; description: string }
+const { entity, title, description } = Astro.props;
+---
+<BaseLayout title={`Update ${title} | PPS Admin Tools`} description={description}>
+  <section class="admin-intro">
+    <div>
+      <h1>Update {title}</h1>
+      <p>{description}</p>
+      <AdminToolLinks />
+    </div>
+    <div class="environment-badge"><span></span> Local development</div>
+  </section>
+  <UpdateAdminEntityForm entity={entity} title={title} client:load />
+</BaseLayout>

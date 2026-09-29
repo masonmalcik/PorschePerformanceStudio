@@ -1,6 +1,5 @@
 use super::{BrandId, CategoryId, EntityMetadata, Money, ProductId};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -10,12 +9,7 @@ pub enum SaleType {
     Clearance,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProductAttribute {
-    pub code: String,
-    pub value: Value,
-}
+pub type ProductAttribute = String;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,6 +51,8 @@ pub struct CreateProduct {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateProduct {
+    pub sku: Option<String>,
+    pub brand_id: Option<BrandId>,
     pub model_number: Option<String>,
     pub price: Option<Money>,
     pub name: Option<String>,
@@ -146,6 +142,14 @@ impl CreateProduct {
         }
         if self.category_ids.len() > 20 {
             return Err("categoryIds cannot contain more than 20 values".into());
+        }
+        if self.attributes.len() > 50
+            || self
+                .attributes
+                .iter()
+                .any(|attribute| attribute.trim().is_empty() || attribute.len() > 100)
+        {
+            return Err("attributes must contain no more than 50 non-empty strings of 100 characters or fewer".into());
         }
         self.price.validate()
     }

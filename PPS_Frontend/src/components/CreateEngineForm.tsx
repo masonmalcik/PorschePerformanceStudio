@@ -54,6 +54,7 @@ export default function CreateEngineForm() {
   }, []);
 
   async function submit(event: FormEvent) {
+    if (event.defaultPrevented) return;
     event.preventDefault();
     if (!vehicleModel || !vehicleGeneration || vehicleTrims.length === 0 || !layout || !aspirationType || !fuelDelivery) {
       notify('error', 'Select a model, generation, at least one trim, engine layout, aspiration type, and fuel delivery.');
@@ -97,24 +98,24 @@ export default function CreateEngineForm() {
   return <div className="admin-workspace">
     <form className="admin-form" onSubmit={submit}>
       <div className="form-heading"><h2>Engine Details</h2></div>
-      <label><span>Vehicle Model</span><AdminSelect value={vehicleModel} options={models.map((model) => ({ value: model.id, label: model.name }))} placeholder="Select a vehicle model" onChange={(id) => { setVehicleModel(id); setVehicleGeneration(''); setVehicleTrims([]); }} /></label>
-      {vehicleModel && <label><span>Vehicle Generation</span><AdminSelect value={vehicleGeneration} options={generations.filter((generation) => generation.vehicleModelId === vehicleModel).map((generation) => ({ value: generation.id, label: generation.name }))} placeholder="Select a vehicle generation" onChange={(id) => { setVehicleGeneration(id); setVehicleTrims([]); }} /></label>}
-      {vehicleGeneration && <><label><span>Vehicle Trims</span><AdminSelect value="" options={trims.filter((trim) => trim.generationId === vehicleGeneration && !vehicleTrims.includes(trim.id)).map((trim) => ({ value: trim.id, label: trim.name }))} placeholder="Select vehicle trims" onChange={(id) => setVehicleTrims((current) => [...current, id])} /></label>
+      <label><span>Vehicle Model</span><AdminSelect value={vehicleModel} options={models.map((model) => ({ value: model.id, label: model.name }))} placeholder="Select a vehicle model" required onChange={(id) => { setVehicleModel(id); setVehicleGeneration(''); setVehicleTrims([]); }} /></label>
+      {vehicleModel && <label><span>Vehicle Generation</span><AdminSelect value={vehicleGeneration} options={generations.filter((generation) => generation.vehicleModelId === vehicleModel).map((generation) => ({ value: generation.id, label: generation.name }))} placeholder="Select a vehicle generation" required onChange={(id) => { setVehicleGeneration(id); setVehicleTrims([]); }} /></label>}
+      {vehicleGeneration && <><label><span>Vehicle Trims</span><AdminSelect value={vehicleTrims[0]??''} options={trims.filter((trim) => trim.generationId === vehicleGeneration && !vehicleTrims.includes(trim.id)).map((trim) => ({ value: trim.id, label: trim.name }))} placeholder="Select vehicle trims" required onChange={(id) => setVehicleTrims((current) => [...current, id])} /></label>
         {vehicleTrims.length > 0 && <div className="admin-selection-tags" aria-label="Selected vehicle trims">{vehicleTrims.map((id) =>
           <span className="admin-selection-tag" key={id}>{trims.find((trim) => trim.id === id)?.name ?? id}
             <button type="button" aria-label={`Remove ${trims.find((trim) => trim.id === id)?.name ?? 'vehicle trim'}`} onClick={() => setVehicleTrims((current) => current.filter((value) => value !== id))}>×</button>
           </span>)}</div>}</>}
-      <label><span>Engine Layout</span><AdminSelect value={layout} options={['F6', 'F4', 'I4', 'I5', 'V6', 'V8'].map((value) => ({ value, label: value }))} placeholder="Select an engine layout" onChange={setLayout} /></label>
+      <label><span>Engine Layout</span><AdminSelect value={layout} options={['F6', 'F4', 'I4', 'I5', 'V6', 'V8'].map((value) => ({ value, label: value }))} placeholder="Select an engine layout" required onChange={setLayout} /></label>
       <label><span>Aspiration Type</span><AdminSelect value={aspirationType} options={[
         { value: 'naturally_aspirated', label: 'Naturally Aspirated' },
         { value: 'supercharged', label: 'Supercharged' },
         { value: 'turbocharged', label: 'Turbocharged' },
         { value: 'twin_turbocharged', label: 'Twin Turbocharged' },
-      ]} placeholder="Select an aspiration type" onChange={setAspirationType} /></label>
+      ]} placeholder="Select an aspiration type" required onChange={setAspirationType} /></label>
       <label><span>Fuel Delivery</span><AdminSelect value={fuelDelivery} options={[
         { value: 'fuel_injected', label: 'Fuel Injected' },
         { value: 'carbureted', label: 'Carbureted' },
-      ]} placeholder="Select a fuel delivery type" onChange={setFuelDelivery} /></label>
+      ]} placeholder="Select a fuel delivery type" required onChange={setFuelDelivery} /></label>
       <label><span>Alloy Material</span><input value={alloyMaterial} maxLength={100} onChange={(event) => setAlloyMaterial(event.target.value)} required /></label>
       <label><span>Factory Code</span><input value={factoryCode} maxLength={64} onChange={(event) => setFactoryCode(event.target.value)} required /></label>
       <label><span>Displacement (Liters)</span><input type="number" min="0.001" max="20" step="any" value={displacement} onChange={(event) => setDisplacement(event.target.value)} required /></label>

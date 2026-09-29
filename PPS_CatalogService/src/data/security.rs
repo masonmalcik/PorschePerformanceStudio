@@ -156,7 +156,11 @@ impl RequestAuthorizer for CognitoAuthorizer {
         {
             return Err(AppError::Forbidden);
         }
-        if !claims.groups.iter().any(|group| group == CATALOG_ADMIN_GROUP) {
+        if !claims
+            .groups
+            .iter()
+            .any(|group| group == CATALOG_ADMIN_GROUP)
+        {
             return Err(AppError::Forbidden);
         }
         Ok(Principal {

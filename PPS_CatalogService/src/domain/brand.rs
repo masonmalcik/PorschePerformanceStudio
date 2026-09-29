@@ -19,6 +19,8 @@ pub struct CreateBrand {
     pub name: String,
     pub image_name: String,
     pub description: Option<String>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 impl CreateBrand {
     pub fn validate(&self) -> Result<(), String> {

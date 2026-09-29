@@ -150,6 +150,12 @@ impl ProductRepository for MongoProductRepository {
         input: UpdateProduct,
     ) -> Result<Option<Product>, AppError> {
         let mut set = doc! { "updatedAt": mongodb::bson::DateTime::now() };
+        if let Some(value) = input.sku {
+            set.insert("sku", value);
+        }
+        if let Some(value) = input.brand_id {
+            set.insert("brandId", object_id(&value.0)?);
+        }
         if let Some(value) = input.model_number {
             set.insert("modelNumber", value);
         }
@@ -269,6 +275,29 @@ impl BrandRepository for MongoBrandRepository {
         })?;
         document.into_domain()
     }
+    async fn get(&self, id: BrandId) -> Result<Option<Brand>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(BrandDocument::into_domain)
+            .transpose()
+    }
+    async fn update(&self, id: BrandId, input: CreateBrand) -> Result<Option<Brand>, AppError> {
+        let mut fields = doc! {"brandCode":input.brand_code,"name":input.name,"imageName":input.image_name,"description":input.description,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| map_named_duplicate(e, "brandCode already exists"))?
+            .map(BrandDocument::into_domain)
+            .transpose()
+    }
 }
 
 pub struct MongoCategoryRepository {
@@ -324,11 +353,46 @@ impl CategoryRepository for MongoCategoryRepository {
             .map(CategoryDocument::into_domain)
             .collect()
     }
+    async fn get(&self, id: CategoryId) -> Result<Option<Category>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(CategoryDocument::into_domain)
+            .transpose()
+    }
+    async fn update(
+        &self,
+        id: CategoryId,
+        input: CreateCategory,
+    ) -> Result<Option<Category>, AppError> {
+        let parent = input.parent_id.map(|v| object_id(&v.0)).transpose()?;
+        let mut fields = doc! {"categoryCode":input.category_code,"parentId":parent,"name":input.name,"description":input.description,"attributes":mongodb::bson::to_bson(&input.attributes).map_err(|e|AppError::InvalidData(e.to_string()))?,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| map_named_duplicate(e, "categoryCode already exists"))?
+            .map(CategoryDocument::into_domain)
+            .transpose()
+    }
 }
 
 fn map_duplicate(error: mongodb::error::Error) -> AppError {
     if error.to_string().contains("E11000") {
         AppError::Conflict("sku already exists".into())
+    } else {
+        AppError::Database(error)
+    }
+}
+fn map_named_duplicate(error: mongodb::error::Error, message: &str) -> AppError {
+    if error.to_string().contains("E11000") {
+        AppError::Conflict(message.into())
     } else {
         AppError::Database(error)
     }
@@ -389,6 +453,33 @@ impl VehicleModelRepository for MongoVehicleModelRepository {
             .map(VehicleModelDocument::into_domain)
             .collect()
     }
+    async fn get(&self, id: VehicleModelId) -> Result<Option<VehicleModel>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(VehicleModelDocument::into_domain)
+            .transpose()
+    }
+    async fn update(
+        &self,
+        id: VehicleModelId,
+        input: CreateVehicleModel,
+    ) -> Result<Option<VehicleModel>, AppError> {
+        let mut fields = doc! {"name":input.name,"modelCode":input.model_code,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| map_named_duplicate(e, "modelCode already exists"))?
+            .map(VehicleModelDocument::into_domain)
+            .transpose()
+    }
 }
 
 pub struct MongoGenerationRepository {
@@ -435,6 +526,33 @@ impl GenerationRepository for MongoGenerationRepository {
             .into_iter()
             .map(GenerationDocument::into_domain)
             .collect()
+    }
+    async fn get(&self, id: GenerationId) -> Result<Option<Generation>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(GenerationDocument::into_domain)
+            .transpose()
+    }
+    async fn update(
+        &self,
+        id: GenerationId,
+        input: CreateGeneration,
+    ) -> Result<Option<Generation>, AppError> {
+        let mut fields = doc! {"vehicleModelId":object_id(&input.vehicle_model_id.0)?,"name":input.name,"generationCode":input.generation_code,"timeframe":mongodb::bson::to_bson(&input.timeframe).map_err(|e|AppError::InvalidData(e.to_string()))?,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| map_named_duplicate(e, "generationCode already exists"))?
+            .map(GenerationDocument::into_domain)
+            .transpose()
     }
 }
 
@@ -485,6 +603,34 @@ impl TrimRepository for MongoTrimRepository {
             None => Ok(None),
         }
     }
+    async fn get(&self, id: TrimId) -> Result<Option<Trim>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(TrimDocument::into_domain)
+            .transpose()
+    }
+    async fn update(&self, id: TrimId, input: CreateTrim) -> Result<Option<Trim>, AppError> {
+        let models = input
+            .vehicle_models
+            .iter()
+            .map(|v| object_id(&v.0))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut fields = doc! {"generationId":object_id(&input.generation_id.0)?,"vehicleModels":models,"name":input.name,"trimCode":input.trim_code,"timeframe":mongodb::bson::to_bson(&input.timeframe).map_err(|e|AppError::InvalidData(e.to_string()))?,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| map_named_duplicate(e, "trimCode already exists for this generation"))?
+            .map(TrimDocument::into_domain)
+            .transpose()
+    }
 }
 
 pub struct MongoEngineRepository {
@@ -514,6 +660,54 @@ impl EngineRepository for MongoEngineRepository {
                 }
             })?;
         document.into_domain()
+    }
+    async fn list_active(&self) -> Result<Vec<crate::domain::Engine>, AppError> {
+        self.collection
+            .find(doc! {"isActive":true})
+            .sort(doc! {"factoryCode":1})
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?
+            .into_iter()
+            .map(EngineDocument::into_domain)
+            .collect()
+    }
+    async fn get(&self, id: EngineId) -> Result<Option<crate::domain::Engine>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(EngineDocument::into_domain)
+            .transpose()
+    }
+    async fn update(
+        &self,
+        id: EngineId,
+        input: CreateEngine,
+    ) -> Result<Option<crate::domain::Engine>, AppError> {
+        let trims = input
+            .vehicle_trims
+            .iter()
+            .map(|v| object_id(&v.0))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut fields = doc! {"vehicleModel":object_id(&input.vehicle_model.0)?,"vehicleGeneration":object_id(&input.vehicle_generation.0)?,"vehicleTrims":trims,"alloyMaterial":input.alloy_material,"factoryCode":input.factory_code,"displacement":input.displacement,"horsepower":input.horsepower,"rpm":input.rpm,"layout":mongodb::bson::to_bson(&input.layout).map_err(|e|AppError::InvalidData(e.to_string()))?,"aspirationType":mongodb::bson::to_bson(&input.aspiration_type).map_err(|e|AppError::InvalidData(e.to_string()))?,"fuelDelivery":mongodb::bson::to_bson(&input.fuel_delivery).map_err(|e|AppError::InvalidData(e.to_string()))?,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| {
+                map_named_duplicate(
+                    e,
+                    "factoryCode already exists for one of the selected trims",
+                )
+            })?
+            .map(EngineDocument::into_domain)
+            .transpose()
     }
 }
 
@@ -545,6 +739,52 @@ impl VehicleConfigurationRepository for MongoVehicleConfigurationRepository {
         })?;
         document.into_domain()
     }
+    async fn list_active(&self) -> Result<Vec<VehicleConfiguration>, AppError> {
+        self.collection
+            .find(doc! {"isActive":true})
+            .sort(doc! {"modelYear":-1})
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?
+            .into_iter()
+            .map(VehicleConfigurationDocument::into_domain)
+            .collect()
+    }
+    async fn get(
+        &self,
+        id: VehicleConfigurationId,
+    ) -> Result<Option<VehicleConfiguration>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(VehicleConfigurationDocument::into_domain)
+            .transpose()
+    }
+    async fn update(
+        &self,
+        id: VehicleConfigurationId,
+        input: CreateVehicleConfiguration,
+    ) -> Result<Option<VehicleConfiguration>, AppError> {
+        let mut fields = doc! {"trimId":object_id(&input.trim_id.0)?,"modelYear":i64::from(input.model_year),"engine":mongodb::bson::to_bson(&input.engine).map_err(|e|AppError::InvalidData(e.to_string()))?,"transmission":mongodb::bson::to_bson(&input.transmission).map_err(|e|AppError::InvalidData(e.to_string()))?,"drivetrain":mongodb::bson::to_bson(&input.drivetrain).map_err(|e|AppError::InvalidData(e.to_string()))?,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| {
+                map_named_duplicate(
+                    e,
+                    "configuration already exists for this trim and model year",
+                )
+            })?
+            .map(VehicleConfigurationDocument::into_domain)
+            .transpose()
+    }
 }
 pub struct MongoProductFitmentRepository {
     collection: mongodb::Collection<ProductFitmentDocument>,
@@ -568,5 +808,43 @@ impl ProductFitmentRepository for MongoProductFitmentRepository {
             }
         })?;
         document.into_domain()
+    }
+    async fn list_active(&self) -> Result<Vec<ProductFitment>, AppError> {
+        self.collection
+            .find(doc! {"isActive":true})
+            .sort(doc! {"createdAt":-1})
+            .await?
+            .try_collect::<Vec<_>>()
+            .await?
+            .into_iter()
+            .map(ProductFitmentDocument::into_domain)
+            .collect()
+    }
+    async fn get(&self, id: ProductFitmentId) -> Result<Option<ProductFitment>, AppError> {
+        self.collection
+            .find_one(doc! {"_id":object_id(&id.0)?})
+            .await?
+            .map(ProductFitmentDocument::into_domain)
+            .transpose()
+    }
+    async fn update(
+        &self,
+        id: ProductFitmentId,
+        input: CreateProductFitment,
+    ) -> Result<Option<ProductFitment>, AppError> {
+        let mut fields = doc! {"productId":object_id(&input.product_id.0)?,"vehicleScope":mongodb::bson::to_bson(&input.vehicle_scope).map_err(|e|AppError::InvalidData(e.to_string()))?,"system":mongodb::bson::to_bson(&input.system).map_err(|e|AppError::InvalidData(e.to_string()))?,"component":mongodb::bson::to_bson(&input.component).map_err(|e|AppError::InvalidData(e.to_string()))?,"position":mongodb::bson::to_bson(&input.position).map_err(|e|AppError::InvalidData(e.to_string()))?,"notes":input.notes,"updatedAt":mongodb::bson::DateTime::now()};
+        if let Some(active) = input.is_active {
+            fields.insert("isActive", active);
+        }
+        self.collection
+            .find_one_and_update(
+                doc! {"_id":object_id(&id.0)?},
+                doc! {"$set":fields,"$inc":{"version":1_i64}},
+            )
+            .return_document(ReturnDocument::After)
+            .await
+            .map_err(|e| map_named_duplicate(e, "product fitment already exists"))?
+            .map(ProductFitmentDocument::into_domain)
+            .transpose()
     }
 }

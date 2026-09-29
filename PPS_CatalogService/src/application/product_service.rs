@@ -91,6 +91,19 @@ impl ProductApplication for CatalogProductService {
     }
 
     async fn update(&self, id: ProductId, mut input: UpdateProduct) -> Result<Product, AppError> {
+        if let Some(sku) = &mut input.sku {
+            *sku = sku.trim().to_uppercase();
+            if sku.is_empty() {
+                return Err(AppError::BadRequest("sku is required".into()));
+            }
+        }
+        if let Some(brand_id) = &input.brand_id {
+            if !self.brands.is_active(brand_id).await? {
+                return Err(AppError::BadRequest(
+                    "brand does not exist or is inactive".into(),
+                ));
+            }
+        }
         if let Some(name) = &mut input.name {
             *name = name.trim().to_owned();
             if name.is_empty() {

@@ -39,6 +39,8 @@ pub struct CreateCategory {
     pub description: Option<String>,
     #[serde(default)]
     pub attributes: Vec<AttributeDefinition>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 impl CreateCategory {

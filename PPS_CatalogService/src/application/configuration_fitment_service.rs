@@ -4,7 +4,8 @@ use super::{
 };
 use crate::{
     domain::{
-        CreateProductFitment, CreateVehicleConfiguration, ProductFitment, VehicleConfiguration,
+        CreateProductFitment, CreateVehicleConfiguration, ProductFitment, ProductFitmentId,
+        VehicleConfiguration, VehicleConfigurationId,
     },
     AppError,
 };
@@ -27,6 +28,23 @@ impl VehicleConfigurationApplication for CatalogVehicleConfigurationService {
         input.validate().map_err(AppError::BadRequest)?;
         self.repository.create(input).await
     }
+    async fn list_active(&self) -> Result<Vec<VehicleConfiguration>, AppError> {
+        self.repository.list_active().await
+    }
+    async fn get(&self, id: VehicleConfigurationId) -> Result<VehicleConfiguration, AppError> {
+        self.repository.get(id).await?.ok_or(AppError::NotFound)
+    }
+    async fn update(
+        &self,
+        id: VehicleConfigurationId,
+        input: CreateVehicleConfiguration,
+    ) -> Result<VehicleConfiguration, AppError> {
+        input.validate().map_err(AppError::BadRequest)?;
+        self.repository
+            .update(id, input)
+            .await?
+            .ok_or(AppError::NotFound)
+    }
 }
 pub struct CatalogProductFitmentService {
     repository: Arc<dyn ProductFitmentRepository>,
@@ -41,5 +59,22 @@ impl ProductFitmentApplication for CatalogProductFitmentService {
     async fn create(&self, input: CreateProductFitment) -> Result<ProductFitment, AppError> {
         input.validate().map_err(AppError::BadRequest)?;
         self.repository.create(input).await
+    }
+    async fn list_active(&self) -> Result<Vec<ProductFitment>, AppError> {
+        self.repository.list_active().await
+    }
+    async fn get(&self, id: ProductFitmentId) -> Result<ProductFitment, AppError> {
+        self.repository.get(id).await?.ok_or(AppError::NotFound)
+    }
+    async fn update(
+        &self,
+        id: ProductFitmentId,
+        input: CreateProductFitment,
+    ) -> Result<ProductFitment, AppError> {
+        input.validate().map_err(AppError::BadRequest)?;
+        self.repository
+            .update(id, input)
+            .await?
+            .ok_or(AppError::NotFound)
     }
 }

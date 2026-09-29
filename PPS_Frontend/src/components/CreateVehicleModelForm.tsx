@@ -19,6 +19,7 @@ type StatusNotice = {
 export default function CreateVehicleModelForm() {
   const [name, setName] = useState('');
   const [modelCode, setModelCode] = useState('');
+  const [validationErrors, setValidationErrors] = useState({ name: false, modelCode: false });
   const [notices, setNotices] = useState<StatusNotice[]>([]);
   const nextNoticeKey = useRef(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,7 +34,7 @@ export default function CreateVehicleModelForm() {
     const trimmedName = name.trim();
     const trimmedModelCode = modelCode.trim();
     if (!trimmedName || !trimmedModelCode) {
-      addNotice('error', 'Request failed', 'Enter both a model name and model code.');
+      setValidationErrors({ name: !trimmedName, modelCode: !trimmedModelCode });
       return;
     }
 
@@ -75,6 +76,7 @@ export default function CreateVehicleModelForm() {
       addNotice('success', 'Model created', `${createdModel.name} was created successfully.`);
       setName('');
       setModelCode('');
+      setValidationErrors({ name: false, modelCode: false });
     } catch (requestError) {
       addNotice(
         'error',
@@ -86,6 +88,9 @@ export default function CreateVehicleModelForm() {
     }
   }
 
+  const nameInvalid = validationErrors.name;
+  const modelCodeInvalid = validationErrors.modelCode;
+
   return (
     <div className="admin-workspace">
       <form className="admin-form" onSubmit={handleSubmit}>
@@ -93,13 +98,15 @@ export default function CreateVehicleModelForm() {
           <h2>Model Details</h2>
         </div>
 
-        <label>
+        <label className={`form-field${nameInvalid ? ' invalid' : ''}`}>
           <span>Model Name</span>
-          <input autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} required />
+          <input autoComplete="off" value={name} onChange={(event) => { setName(event.target.value); setValidationErrors((current) => ({ ...current, name: false })); }} aria-invalid={nameInvalid} aria-describedby={nameInvalid ? 'model-name-error' : undefined} />
+          {nameInvalid && <small className="field-error" id="model-name-error">This Field is Required</small>}
         </label>
-        <label>
+        <label className={`form-field${modelCodeInvalid ? ' invalid' : ''}`}>
           <span>Model Code</span>
-          <input autoComplete="off" value={modelCode} onChange={(event) => setModelCode(event.target.value)} required />
+          <input autoComplete="off" value={modelCode} onChange={(event) => { setModelCode(event.target.value); setValidationErrors((current) => ({ ...current, modelCode: false })); }} aria-invalid={modelCodeInvalid} aria-describedby={modelCodeInvalid ? 'model-code-error' : undefined} />
+          {modelCodeInvalid && <small className="field-error" id="model-code-error">This Field is Required</small>}
         </label>
 
         <button className="admin-submit" type="submit" disabled={isSubmitting}>

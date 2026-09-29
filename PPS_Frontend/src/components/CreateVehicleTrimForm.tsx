@@ -49,6 +49,7 @@ export default function CreateVehicleTrimForm() {
   }, []);
 
   async function submit(event: FormEvent) {
+    if (event.defaultPrevented) return;
     event.preventDefault();
     if (!vehicleModelId) {
       notify('error', 'Vehicle model required', 'Select a vehicle model.');
@@ -104,11 +105,12 @@ export default function CreateVehicleTrimForm() {
           value={vehicleModelId}
           options={vehicleModels.map((model) => ({ value: model.id, label: model.name }))}
           placeholder="Select a vehicle model"
+          required
           onChange={(id) => { setVehicleModelId(id); setGenerationId(''); }}
         />
       </label>
       {vehicleModelId && <label><span>Vehicle Generation</span>
-        <AdminSelect value={generationId} options={generations.filter((generation) => generation.vehicleModelId === vehicleModelId).map((generation) => ({ value: generation.id, label: generation.name }))} placeholder="Select a vehicle generation" onChange={setGenerationId} />
+        <AdminSelect value={generationId} options={generations.filter((generation) => generation.vehicleModelId === vehicleModelId).map((generation) => ({ value: generation.id, label: generation.name }))} placeholder="Select a vehicle generation" required onChange={setGenerationId} />
       </label>}
       <label><span>Trim Name</span><input value={name} onChange={(event) => setName(event.target.value)} required /></label>
       <label><span>Trim Code</span><input value={trimCode} onChange={(event) => setTrimCode(event.target.value)} required /></label>

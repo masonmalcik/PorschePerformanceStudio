@@ -1,6 +1,6 @@
 use super::{BrandApplication, BrandRepository, CategoryApplication, CategoryRepository};
 use crate::{
-    domain::{Brand, Category, CreateBrand, CreateCategory},
+    domain::{Brand, BrandId, Category, CategoryId, CreateBrand, CreateCategory},
     AppError,
 };
 use async_trait::async_trait;
@@ -26,6 +26,19 @@ impl BrandApplication for CatalogBrandService {
     async fn list_active(&self) -> Result<Vec<Brand>, AppError> {
         self.repository.list_active().await
     }
+    async fn get(&self, id: BrandId) -> Result<Brand, AppError> {
+        self.repository.get(id).await?.ok_or(AppError::NotFound)
+    }
+    async fn update(&self, id: BrandId, mut input: CreateBrand) -> Result<Brand, AppError> {
+        input.brand_code = input.brand_code.trim().to_uppercase();
+        input.name = input.name.trim().to_owned();
+        input.image_name = input.image_name.trim().to_owned();
+        input.validate().map_err(AppError::BadRequest)?;
+        self.repository
+            .update(id, input)
+            .await?
+            .ok_or(AppError::NotFound)
+    }
 }
 
 pub struct CatalogCategoryService {
@@ -46,5 +59,21 @@ impl CategoryApplication for CatalogCategoryService {
     }
     async fn list_active(&self) -> Result<Vec<Category>, AppError> {
         self.repository.list_active().await
+    }
+    async fn get(&self, id: CategoryId) -> Result<Category, AppError> {
+        self.repository.get(id).await?.ok_or(AppError::NotFound)
+    }
+    async fn update(
+        &self,
+        id: CategoryId,
+        mut input: CreateCategory,
+    ) -> Result<Category, AppError> {
+        input.category_code = input.category_code.trim().to_uppercase();
+        input.name = input.name.trim().to_owned();
+        input.validate().map_err(AppError::BadRequest)?;
+        self.repository
+            .update(id, input)
+            .await?
+            .ok_or(AppError::NotFound)
     }
 }

@@ -42,6 +42,8 @@ pub struct CreateEngine {
     pub layout: EngineLayout,
     pub aspiration_type: AspirationType,
     pub fuel_delivery: FuelDeliveryType,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 
 impl CreateEngine {

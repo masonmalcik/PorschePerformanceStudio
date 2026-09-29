@@ -44,6 +44,8 @@ pub struct CreateProductFitment {
     pub component: ComponentType,
     pub position: Option<ComponentPosition>,
     pub notes: Option<String>,
+    #[serde(default)]
+    pub is_active: Option<bool>,
 }
 impl CreateProductFitment {
     pub fn validate(&self) -> Result<(), String> {
