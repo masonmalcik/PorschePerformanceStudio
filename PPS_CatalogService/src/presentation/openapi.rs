@@ -23,6 +23,7 @@ pub fn document() -> Value {
                             "responses": { "200": { "description": "A page of public products" }, "304": { "description": "Not modified" }, "400": { "description": "Invalid query" } }
                         }},
                         "/products/{id}": { "get": { "summary": "Get a public product", "operationId": "getProduct", "responses": { "200": { "description": "Product" }, "404": { "description": "Not found" } } } },
+                        "/categories": { "get": { "summary": "List active public categories", "operationId": "listCategories", "responses": { "200": { "description": "Active categories" } } } },
                         "/admin/products": { "get": { "summary":"List active product options", "security":[{"localAdmin":[]},{"cognito":["pps-catalog/admin"]}],"responses":{"200":{"description":"Product options"}}}, "post": { "summary": "Create a product", "operationId": "createProduct", "security": [{ "localAdmin": [] }, { "cognito": ["pps-catalog/admin"] }], "responses": { "201": { "description": "Created" }, "401": { "description": "Unauthorized" }, "403": { "description": "Forbidden" } } } },
                         "/admin/products/{id}": {
                             "patch": { "summary": "Update a product", "operationId": "updateProduct", "security": [{ "localAdmin": [] }, { "cognito": ["pps-catalog/admin"] }], "responses": { "200": { "description": "Updated" }, "400": { "description": "Invalid request" } } },
@@ -62,6 +63,7 @@ mod tests {
     fn contract_contains_public_and_admin_routes() {
         let paths = document()["paths"].as_object().unwrap().clone();
         assert!(paths.contains_key("/products"));
+        assert!(paths.contains_key("/categories"));
         assert!(paths.contains_key("/admin/vehicle-models"));
         assert!(paths.contains_key("/admin/engines"));
         let engine_schema = &paths["/admin/engines"]["post"]["requestBody"]["content"]

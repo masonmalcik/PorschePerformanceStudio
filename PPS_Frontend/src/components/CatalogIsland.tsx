@@ -15,10 +15,12 @@ type ApiProduct = {
 };
 
 type ProductPage = { items: ApiProduct[] };
+type ApiCategory = { id: string; name: string; description: string | null; parentId: string | null };
 const titleCase = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export default function CatalogIsland() {
   const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [saleType, setSaleType] = useState('All');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -28,12 +30,16 @@ export default function CatalogIsland() {
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({ pageSize: '100', sort: 'name', direction: 'asc' });
-    fetch(`${catalogApiBase}/products?${params}`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Catalog request failed with status ${response.status}.`);
-        return response.json() as Promise<ProductPage>;
+    Promise.all([
+      fetch(`${catalogApiBase}/products?${params}`, { signal: controller.signal }),
+      fetch(`${catalogApiBase}/categories`, { signal: controller.signal }),
+    ])
+      .then(async ([productResponse, categoryResponse]) => {
+        if (!productResponse.ok) throw new Error(`Catalog request failed with status ${productResponse.status}.`);
+        if (!categoryResponse.ok) throw new Error(`Category request failed with status ${categoryResponse.status}.`);
+        return Promise.all([productResponse.json() as Promise<ProductPage>, categoryResponse.json() as Promise<ApiCategory[]>]);
       })
-      .then((page) => setProducts(page.items))
+      .then(([page, categoryValues]) => { setProducts(page.items); setCategories(categoryValues); })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === 'AbortError') return;
         setError(reason instanceof Error ? reason.message : 'The catalog is temporarily unavailable.');
@@ -47,8 +53,16 @@ export default function CatalogIsland() {
     (saleType === 'All' || titleCase(product.saleType) === saleType) &&
     `${product.name} ${product.modelNumber ?? ''} ${product.description ?? ''}`.toLowerCase().includes(query.toLowerCase())
   ), [products, saleType, query]);
+  const rootCategories = useMemo(() => categories.filter((category) => !category.parentId), [categories]);
 
   return <section className="catalog-shell" aria-label="Performance product catalog">
+    {rootCategories.length > 0 && <nav className="catalog-category-grid" aria-label="Product categories">
+      {rootCategories.map((category) => <a href="#" onClick={(event) => event.preventDefault()} key={category.id}>
+        <h2>{category.name}</h2>
+        <p>{category.description ?? 'Explore performance upgrades in this category.'}</p>
+        <span aria-hidden="true">→</span>
+      </a>)}
+    </nav>}
     <div className="catalog-tools">
       <div className="filters" aria-label="Filter products by sale type">
         {saleTypes.map((item) => <button key={item} className={saleType === item ? 'selected' : ''} onClick={() => setSaleType(item)}>{item}</button>)}

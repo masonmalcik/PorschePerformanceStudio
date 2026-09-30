@@ -111,6 +111,11 @@ Resources:
           Properties:
             Path: /admin/categories
             Method: ANY
+        PublicCategoriesApi:
+          Type: HttpApi
+          Properties:
+            Path: /categories
+            Method: GET
         BrandOptionsApi:
           Type: HttpApi
           Properties:

@@ -64,12 +64,26 @@ jobs:
       - run: cargo install cargo-lambda --locked
       - run: cargo lambda build --release --arm64 --bin api
       - run: sam build
+      - name: Resolve deployment bucket
+        id: deployment-bucket
+        shell: bash
+        run: |
+          bucket=$(aws cloudformation describe-stacks \
+            --stack-name pps-catalog-dev \
+            --query "Stacks[0].Outputs[?OutputKey=='AssetsBucketName'].OutputValue" \
+            --output text)
+          if [ -z "$bucket" ] || [ "$bucket" = "None" ]; then
+            echo "The catalog stack does not expose an AssetsBucketName output." >&2
+            exit 1
+          fi
+          echo "name=$bucket" >> "$GITHUB_OUTPUT"
       - name: Deploy Catalog
         run: >-
           sam deploy
           --stack-name pps-catalog-dev
           --region us-east-1
-          --resolve-s3
+          --s3-bucket ${{ steps.deployment-bucket.outputs.name }}
+          --s3-prefix sam-artifacts
           --capabilities CAPABILITY_IAM
           --no-confirm-changeset
           --no-fail-on-empty-changeset

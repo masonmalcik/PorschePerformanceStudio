@@ -17,9 +17,10 @@ use crate::{
         responses::{
             BrandCreatedResponse, CategoryCreatedResponse, EngineCreatedResponse,
             GenerationCreatedResponse, GenerationOptionResponse, NamedOptionResponse,
-            ProductFitmentCreatedResponse, PublicProductPageResponse, PublicProductResponse,
-            TrimCreatedResponse, TrimOptionResponse, VehicleConfigurationCreatedResponse,
-            VehicleModelCreatedResponse, VehicleModelOptionResponse,
+            ProductFitmentCreatedResponse, PublicCategoryResponse, PublicProductPageResponse,
+            PublicProductResponse, TrimCreatedResponse, TrimOptionResponse,
+            VehicleConfigurationCreatedResponse, VehicleModelCreatedResponse,
+            VehicleModelOptionResponse,
         },
     },
     AppError,
@@ -178,6 +179,16 @@ async fn route(request: Request, state: AppState) -> Result<Response<Body>, AppE
             let id = ProductId(parse_id(path, "/products/")?);
             let product = state.products.get(id).await?;
             cached_json_response(&request, 200, &PublicProductResponse::from(product))
+        }
+        (Method::GET, "/categories") => {
+            let values: Vec<PublicCategoryResponse> = state
+                .categories
+                .list_active()
+                .await?
+                .into_iter()
+                .map(Into::into)
+                .collect();
+            cached_json_response(&request, 200, &values)
         }
         (Method::POST, "/admin/products") => {
             authorize_admin(&request, &state).await?;

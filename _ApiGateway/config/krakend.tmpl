@@ -146,6 +146,14 @@
       "extra_config": {"qos/ratelimit/router": {"max_rate": 200, "capacity": 200, "client_max_rate": 30, "client_capacity": 30, "strategy": "ip"}},
       "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/products/{id}", "extra_config": {"qos/http-cache": {"max_items": 1000, "max_size": 134217728}}}]
     },
+    {
+      "endpoint": "/api/v1/catalog/categories",
+      "method": "GET",
+      "input_headers": ["If-None-Match", "X-Request-ID"],
+      "output_encoding": "no-op",
+      "extra_config": {"qos/ratelimit/router": {"max_rate": 200, "capacity": 200, "client_max_rate": 30, "client_capacity": 30, "strategy": "ip"}},
+      "backend": [{"encoding": "no-op", "sd": "static", "host": ["{{ env "PPS_CATALOG_URL" }}"], "url_pattern": "/categories", "extra_config": {"qos/http-cache": {"max_items": 1000, "max_size": 134217728}}}]
+    },
     {{ template "adminEndpoint" dict "path" "/api/v1/catalog/admin/products" "method" "GET" "backendPath" "/admin/products" }},
     {{ template "adminEndpoint" dict "path" "/api/v1/catalog/admin/products" "method" "POST" "backendPath" "/admin/products" }},
     {{ template "adminEndpoint" dict "path" "/api/v1/catalog/admin/products/{id}" "method" "GET" "backendPath" "/admin/products/{id}" }},

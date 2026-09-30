@@ -61,6 +61,26 @@ impl From<ProductPage> for PublicProductPageResponse {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PublicCategoryResponse {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub parent_id: Option<String>,
+}
+
+impl From<Category> for PublicCategoryResponse {
+    fn from(value: Category) -> Self {
+        Self {
+            id: value.id.0,
+            name: value.name,
+            description: value.description,
+            parent_id: value.parent_id.map(|id| id.0),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VehicleModelCreatedResponse {
     pub id: String,
     pub name: String,
